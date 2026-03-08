@@ -7,9 +7,12 @@ from typing import (
     Any,
     Generic,
     List,
+    Protocol,
     Type,
     TypeVar,
     overload,
+    get_origin,
+    get_args
 )
 
 # TYPE_CHECKING guard — DIContainer is only imported for the type checker.
@@ -20,8 +23,30 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
+class _Injectable:
+    """
+    Marker base class for all injection metadata types in this library.
+
+    Subclass this to tag a dataclass as recognized injection metadata
+    (e.g. InjectMeta, LazyMeta). The container's resolution methods use
+    isinstance(hint, _Injectable) to dispatch injection handling.
+
+    No logic, state, or required methods — presence in the MRO is the
+    entire contract.
+
+    Thread safety:  ✅ Safe — no state whatsoever.
+    Async safety:   ✅ Safe — same reason.
+
+    Example:
+        @dataclass
+        class MyMeta(_Injectable):
+            qualifier: str | None = None  # will be detected by the container
+    """
+
+    __slots__ = ()  # Lightweight — subclasses define their own fields
+
 @dataclass
-class InjectMeta:
+class InjectMeta(_Injectable):
     """Marker placed inside Annotated[T, InjectMeta(...)] by the Inject alias.
 
     Detected by the container's _resolve_hint_sync/_async methods to control
@@ -130,7 +155,7 @@ InjectInstances = _InjectedInstancesAlias()
 # ─────────────────────────────────────────────────────────────────
 
 @dataclass
-class LazyMeta:
+class LazyMeta(_Injectable):
     """Marker placed inside Annotated[T, LazyMeta(...)] by the Lazy alias.
 
     Detected by the container's _resolve_hint_sync/_async methods to
@@ -282,3 +307,43 @@ class _LazyAlias:
 # Users import Lazy and use it as a type alias factory; they never instantiate
 # _LazyAlias directly. This keeps the usage surface minimal and consistent.
 Lazy = _LazyAlias()
+
+def _has_injectable_metadata(hint: Any) -> bool:
+    """
+    Return True if a type hint contains any _Injectable metadata in its Annotated args.
+
+    Designed as a fast pre-flight check — call this before the more expensive
+    _resolve_hint_sync/_async to avoid processing hints that carry no injection
+    metadata at all.
+
+    Args:
+        hint: Any type hint — bare types (int, str, MyClass), Annotated[T, ...],
+              or complex generics (List[T], Optional[T]) are all accepted.
+
+    Returns:
+        True  — hint is Annotated[T, ..., <_Injectable>, ...] with at least
+                one _Injectable instance among the metadata args.
+        False — hint is a bare type, a non-Annotated generic, or an Annotated
+                type whose metadata contains no _Injectable instances.
+
+    Edge cases:
+        - Bare type (int, MyClass)         → False, no Annotated wrapper
+        - Annotated with no _Injectable    → False (e.g. Annotated[int, "doc"])
+        - Annotated with multiple metadata → True if ANY arg is _Injectable
+        - Nested Annotated                 → False — outer origin must be
+                                             Annotated; inner nesting is not walked
+        - hint is None                     → False, get_origin(None) is not Annotated
+
+    Example:
+        _has_injectable_metadata(int)                          # False
+        _has_injectable_metadata(Inject[MyService])            # True
+        _has_injectable_metadata(Annotated[int, "just a doc"]) # False
+        _has_injectable_metadata(Lazy[MyService])              # True
+    """
+    return _get_injectable_metadata(hint) is not None
+
+def _get_injectable_metadata(hint: Any) -> _Injectable | None:
+    if get_origin(hint) is Annotated:
+        args        = get_args(hint)
+        return next((a for a in args[1:] if isinstance(a, _Injectable)), None)
+    return None

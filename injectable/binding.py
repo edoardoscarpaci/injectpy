@@ -11,6 +11,14 @@ from typing import (
     get_type_hints,
     runtime_checkable,
 )
+from dataclasses import (
+    field,
+    dataclass
+)
+from abc import (
+    ABC,
+    abstractmethod
+)
 
 from .decorator.lifecycle import _find_post_construct, _find_pre_destroy
 from .exceptions import (
@@ -24,102 +32,236 @@ from .metadata import (
     Scope,
     _get_metadata,
     _get_provider_metadata,
+    _is_scope_leak
 )
+
 
 if TYPE_CHECKING:
     from .container import DIContainer
 
-# ─────────────────────────────────────────────────────────────────
-#  Shared protocol — what the container needs from any binding
-# ─────────────────────────────────────────────────────────────────
-@runtime_checkable
-class IBinding(Protocol):
-    """Structural protocol that every binding type must satisfy.
+@dataclass
+class BindingDescriptor:
+    """
+    A plain, serialisable snapshot of a single binding and its full
+    recursive dependency tree.
 
-    The container only ever talks to ``IBinding`` — never to ``ClassBinding``
-    or ``ProviderBinding`` directly.  This eliminates all ``isinstance`` guards
-    from ``DIContainer`` and makes adding new binding strategies O(1) effort.
+    Produced by ``Binding.describe()`` — never constructed directly by
+    callers. Rendering to ASCII is done via ``__repr__``.
 
-    Thread safety:  ✅ Safe — bindings are immutable after construction.
-                    All mutable state lives in the container's caches, not here.
-    Async safety:   ✅ Safe — ``acreate`` is a coroutine; callers must await it.
-                    The binding itself holds no async state.
+    Attributes:
+        interface:    Fully-qualified name of the interface type.
+        implementation: Fully-qualified name of the concrete type.
+        scope:        Lifecycle scope of this binding.
+        qualifier:    Optional named qualifier (Jakarta-style @Named).
+        dependencies: Recursively resolved dependency descriptors.
+        scope_leak:   True when this binding is injected into a longer-lived
+                      parent — set by the parent during tree construction.
+
+    Thread safety:  ✅ Frozen dataclass — immutable after construction.
+    Async safety:   ✅ No shared mutable state.
 
     Edge cases:
-        - ``interface`` may equal ``implementation`` (self-registration).
-        - ``qualifier`` being ``None`` means "matches any qualifier" in filters.
-        - ``priority`` defaults to ``0``; lower values win in sorting.
+        - Circular deps → caller must guard; descriptor does NOT detect cycles.
+        - No dependencies → ``dependencies`` is an empty tuple.
+        - Unknown scope → raises ValueError in ``_is_leak()``.
+
+    Example:
+        descriptor = my_binding.describe(container)
+        print(descriptor)           # → ASCII tree
+        print(repr(descriptor))     # → same ASCII tree
+        d = descriptor.to_dict()    # → plain dict for JSON/YAML
     """
-    interface:    type
-    qualifier:    str | None
-    priority:     int
-    scope:        Scope
+
+    interface:      str
+    implementation: str
+    scope:          Scope
+    qualifier:      str | None                    = None
+    priority :      int | None                    = None 
+    dependencies:   tuple[BindingDescriptor, ...] = field(default_factory=tuple)
     
-    def validate(self, container: 'DIContainer') -> None:
-        """Validate this binding against the container's current registry.
+    @property
+    def scope_leak(self) -> bool:
+        """
+        True if any **direct** dependency is shorter-lived than this binding.
 
-        Called once by :meth:`~injectable.container.DIContainer.validate_bindings`
-        during the phase transition from registration to resolution.
-        Implementations should raise on any detected misconfiguration
-        (e.g. scope leaks).
-
-        Args:
-            container: The container holding the full binding registry,
-                used to look up dependency bindings for cross-binding checks.
+        Only checks one level deep — this describes the binding's own health,
+        not the health of its entire subtree. Deeper leaks are visible on
+        their own descriptor when inspected directly.
 
         Returns:
-            None
+            True if at least one direct dependency has a shorter scope.
 
-        Raises:
-            ScopeViolationDetectedError: If the binding introduces a scope leak.
+        Edge cases:
+            - No dependencies → always False.
+            - Equal scopes    → False (not a leak).
+        """
+        # Compare each direct dep's scope against this binding's scope
+        return any(_is_scope_leak(self.scope,dep.scope) for dep in self.dependencies)
+
+    # ── ASCII rendering ───────────────────────────────────────────────────────
+
+    def __repr__(self) -> str:
+        """
+        Render the full dependency tree as a human-readable ASCII tree.
+
+        Output format:
+            Interface [scope] (qualifier)  ⚠️ SCOPE LEAK
+            ├── DepA [scope]
+            │   └── DepB [scope]  ⚠️ SCOPE LEAK
+            └── DepC [scope]
+
+        Returns:
+            Multi-line ASCII string. Single trailing newline.
+        """
+        lines: list[str] = []
+        self._render(lines, prefix="", is_last=True, is_root=True)
+        return "\n".join(lines)
+
+    def _render(
+        self,
+        lines: list[str],
+        prefix: str,
+        is_last: bool,
+        is_root: bool,
+        parent_scope: Scope | None = None,
+    ) -> None:
+        """
+        Recursively append tree lines into ``lines``.
+
+        Args:
+            lines:   Accumulator — each call appends one or more lines.
+            prefix:  Indentation string built up as we recurse deeper.
+            is_last: Whether this node is the last sibling — controls
+                     whether we draw └── or ├──.
+            is_root: Root node gets no branch connector.
+        """
+        # ── Build the connector for this node ────────────────────────────────
+        # Root has no connector; children use └── or ├── depending on position.
+        if is_root:
+            connector = ""
+        else:
+            connector = "└── " if is_last else "├── "
+
+        # ── Format the node label ─────────────────────────────────────────────
+        qualifier_str = f" ({self.qualifier})" if self.qualifier else ""
+        priority_str = f"Priority({self.priority})" if self.priority else ""
+        leak_flag = (
+            "  ⚠️  SCOPE LEAK"
+            if parent_scope is not None and _is_scope_leak(parent_scope=parent_scope,dep_scope=self.scope)
+            else ""
+        )
+        label = (
+            f"{self.interface} [{self.scope.name}]{qualifier_str}{priority_str}"
+            f" → {self.implementation}{leak_flag}"
+        )
+
+        lines.append(f"{prefix}{connector}{label}")
+
+        # ── Recurse into dependencies ─────────────────────────────────────────
+        # Extend the prefix so child branches align under their parent label.
+        # Last child uses spaces (no continuing vertical bar); others use │.
+        child_prefix = prefix if is_root else prefix + ("    " if is_last else "│   ")
+
+        for i, dep in enumerate(self.dependencies):
+            dep._render(
+                lines,
+                prefix=child_prefix,
+                is_last=(i == len(self.dependencies) - 1),
+                is_root=False,
+                # Pass THIS node's scope so the child can flag itself if needed
+                parent_scope=self.scope,
+            )
+
+    # ── Serialisation ─────────────────────────────────────────────────────────
+
+    def to_dict(self) -> dict:
+        """
+        Convert the full descriptor tree to a plain nested dict.
+
+        Suitable for JSON / YAML serialisation. Scope is stored as its
+        string name so the output is human-readable without the IntEnum.
+
+        Returns:
+            Nested dict mirroring the descriptor tree structure.
+
+        Example:
+            import json
+            print(json.dumps(descriptor.to_dict(), indent=2))
+        """
+        return {
+            "interface":      self.interface,
+            "implementation": self.implementation,
+            "scope":          self.scope.name,
+            "qualifier":      self.qualifier,
+            "scope_leak":     self.scope_leak,
+            "priority":       self.priority,
+            "dependencies":   [d.to_dict() for d in self.dependencies],
+        }
+class Binding(ABC):
+    """
+    Abstract base for all binding types in the DI container.
+
+    Maps an interface to a strategy for producing an instance of that type.
+    Subclasses implement sync, async, and describe variants alongside a
+    validation step.
+    """
+
+    @abstractmethod
+    def validate(self, container: DIContainer) -> None:
+        """
+        Assert that this binding is resolvable within the given container.
+
+        Args:
+            container: The container to validate against.
         """
         pass
 
-    def create(self, container: 'DIContainer') -> Any:
-        """Instantiate or invoke this binding synchronously.
-
-        Each binding type owns its own creation logic — the container never
-        needs to distinguish between a class and a provider function.
+    @abstractmethod
+    def create(self, container: DIContainer) -> Any:
+        """
+        Synchronously construct and return an instance for this binding.
 
         Args:
-            container: The active ``DIContainer``, used to resolve
-                transitive dependencies during construction.
+            container: The container used to resolve transitive dependencies.
 
         Returns:
-            The fully constructed and injected instance.
-
-        Raises:
-            RuntimeError: If the underlying provider is ``async def`` and
-                must be awaited — callers should use :meth:`acreate` instead.
-            CircularDependencyError: If resolving this binding would close
-                a dependency cycle.
-            LookupError: If a required transitive dependency has no binding.
+            A fully constructed and injected instance of the bound type.
         """
-        ...
+        pass
 
-    async def acreate(self, container: 'DIContainer') -> Any:
-        """Instantiate or invoke this binding asynchronously.
-
-        Async mirror of :meth:`create`.  Handles both sync and async providers
-        transparently — sync providers are called normally; async providers are
-        awaited.
+    @abstractmethod
+    async def acreate(self, container: DIContainer) -> Any:
+        """
+        Asynchronously construct and return an instance for this binding.
 
         Args:
-            container: The active ``DIContainer``, used to resolve
-                transitive dependencies during construction.
+            container: The container used to resolve transitive dependencies.
 
         Returns:
-            The fully constructed and injected instance.
-
-        Raises:
-            CircularDependencyError: If resolving this binding would close
-                a dependency cycle.
-            LookupError: If a required transitive dependency has no binding.
+            A fully constructed and injected instance of the bound type.
         """
-        ...
+        pass
 
+    @abstractmethod
+    def describe(
+        self,
+        container: DIContainer,
+        _visited: frozenset[type] | None = None,
+    ) -> BindingDescriptor:
+        """
+        Build a recursive ``BindingDescriptor`` snapshot of this binding.
 
-class ClassBinding:
+        Args:
+            container: The container used to look up dependency bindings.
+            _visited:  Internal cycle guard — do not pass from call sites.
+
+        Returns:
+            A fully populated ``BindingDescriptor`` for this binding and its
+            entire dependency subtree.
+        """
+        pass
+
+class ClassBinding(Binding):
     """Binding that instantiates a concrete class via constructor injection.
 
     Reads DI metadata from the ``@Component`` / ``@Singleton`` decorator on
@@ -252,8 +394,59 @@ class ClassBinding:
         instance = await container._resolve_constructor_async(self.implementation)
         await container._run_post_construct_async(instance, self.post_construct)
         return instance
+    
+    def describe(self, container, _visited: frozenset[type] | None = None) -> BindingDescriptor:
+        """
+        Build a full recursive ``BindingDescriptor`` for this binding.
 
-class ProviderBinding:
+        Scope-leak flags are applied automatically on the completed tree
+        before returning, so the caller always gets a fully annotated result.
+
+        Args:
+            container: The DI container — used to look up dependency bindings.
+            _visited:  Internal cycle guard — do not pass from call sites.
+                       Tracks interface types already on the current path.
+
+        Returns:
+            A fully annotated ``BindingDescriptor`` tree.
+
+        Raises:
+            RecursionError: If a circular dependency exists and the container
+                            does not raise ``CircularDependencyError`` itself.
+
+        Edge cases:
+            - No dependencies → descriptor has empty ``dependencies`` tuple.
+            - Dependency not registered → skipped with a sentinel descriptor
+              showing ``[UNRESOLVED]`` scope.
+        """
+        # ── Cycle guard — prevent infinite recursion ──────────────────────────
+        # Uses frozenset (immutable) so each recursive path is independent.
+        visited = _visited or frozenset()
+        if self.interface in visited:  # type: ignore[attr-defined]
+            # Return a sentinel rather than crashing — caller can see the cycle
+            return BindingDescriptor(
+                interface=f"{self.interface.__name__} [CYCLE DETECTED]",  # type: ignore[attr-defined]
+                implementation="—",
+                scope=self.scope,  # type: ignore[attr-defined]
+            )
+
+        visited = visited | {self.interface}  # type: ignore[attr-defined]
+
+        # ── Recursively describe each dependency ──────────────────────────────
+        dep_descriptors: list[BindingDescriptor] = []
+        for dep_binding in container._get_dependencies(self):  # type: ignore[attr-defined]
+            dep_descriptors.append(dep_binding.describe(container, _visited=visited))
+
+        # ── Build the descriptor ──────────────────────
+        return BindingDescriptor(
+            interface=self.interface.__name__,  # type: ignore[attr-defined]
+            implementation=self.implementation.__name__,  # type: ignore[attr-defined]
+            scope=self.scope,  # type: ignore[attr-defined]
+            qualifier=self.qualifier,
+            dependencies=tuple(dep_descriptors),
+        )
+
+class ProviderBinding(Binding):
     """Binding that delegates instance creation to a plain function (factory).
 
     The function's return type annotation becomes the resolved interface.
@@ -358,7 +551,7 @@ class ProviderBinding:
             f"{async_part})"
         )
     
-    def validate(self, _container: DIContainer) -> None:
+    def validate(self, container: DIContainer) -> None:
         """No-op — provider bindings have no scope-leak semantics to check.
 
         Provider functions declare their own scope via ``singleton=True/False``
@@ -371,6 +564,7 @@ class ProviderBinding:
         Returns:
             None
         """
+        pass
 
     def create(self, container: DIContainer) -> Any:
         """Invoke the provider function synchronously with all dependencies injected.
@@ -411,6 +605,58 @@ class ProviderBinding:
             LookupError: If any required parameter of :attr:`fn` has no binding.
         """
         return await container._call_provider_async(self.fn)
+    
+    def describe(
+        self,
+        container: DIContainer,
+        _visited: frozenset[type] | None = None,
+    ) -> BindingDescriptor:
+        """
+        Build a full recursive ``BindingDescriptor`` for this binding.
+
+        Args:
+            container: The DI container — used to look up dependency bindings.
+            _visited:  Internal cycle guard — do not pass from call sites.
+                       Tracks interface types already on the current path.
+
+        Returns:
+            A fully annotated ``BindingDescriptor`` tree.
+
+        Raises:
+            RecursionError: If a circular dependency exists and the container
+                            does not raise ``CircularDependencyError`` itself.
+
+        Edge cases:
+            - No dependencies → descriptor has empty ``dependencies`` tuple.
+            - Dependency not registered → skipped with a sentinel descriptor
+              showing ``[UNRESOLVED]`` scope.
+        """
+        # ── Cycle guard — prevent infinite recursion ──────────────────────────
+        # Uses frozenset (immutable) so each recursive path is independent.
+        visited = _visited or frozenset()
+        if self.interface in visited:  # type: ignore[attr-defined]
+            # Return a sentinel rather than crashing — caller can see the cycle
+            return BindingDescriptor(
+                interface=f"{self.interface.__name__} [CYCLE DETECTED]",  # type: ignore[attr-defined]
+                implementation="—",
+                scope=self.scope,  # type: ignore[attr-defined]
+            )
+
+        visited = visited | {self.interface}  # type: ignore[attr-defined]
+
+        # ── Recursively describe each dependency ──────────────────────────────
+        dep_descriptors: list[BindingDescriptor] = []
+        for dep_binding in container._get_dependencies(self):  # type: ignore[attr-defined]
+            dep_descriptors.append(dep_binding.describe(container, _visited=visited))
+
+        # ── Build the descriptor ──────────────────────
+        return BindingDescriptor(
+            interface=self.interface.__name__,  # type: ignore[attr-defined]
+            implementation=self.fn.__name__,  # type: ignore[attr-defined]
+            scope=self.scope,  # type: ignore[attr-defined]
+            qualifier=self.qualifier,
+            dependencies=tuple(dep_descriptors),
+        )
 
 
 # DESIGN: union TypeAlias — container only ever holds AnyBinding, never concrete types.

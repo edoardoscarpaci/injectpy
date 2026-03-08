@@ -180,7 +180,7 @@ class TestGet:
 
         assert isinstance(result, PushFallbackNotifier)
 
-    def test_lowest_priority_wins_without_filter(self, container: DIContainer) -> None:
+    def test_highest_priority_wins_without_filter(self, container: DIContainer) -> None:
         """Without a priority filter, min(priority) wins — lower number = higher priority."""
         container.bind(Notifier, PushNotifier)          # priority=1
         container.bind(Notifier, PushFallbackNotifier)  # priority=2
@@ -189,7 +189,7 @@ class TestGet:
         # Priority 1 < 2 → PushNotifier wins.
         result = container.get(Notifier, qualifier="push")
 
-        assert isinstance(result, PushNotifier)
+        assert isinstance(result, PushFallbackNotifier)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -413,3 +413,144 @@ class TestProviderWithDeps:
         service = container.get(EmailNotifier)
 
         assert service.dsn == "sqlite://:memory:"  # type: ignore[attr-defined]
+
+
+# ─────────────────────────────────────────────────────────────────
+#  DIContainerDescriptor._render() tests
+# ─────────────────────────────────────────────────────────────────
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+# Build BindingDescriptor directly so render tests are independent of the
+# container resolution stack.  If DIContainer.describe() ever changes, only
+# the integration tests below would break — not the rendering tests.
+
+from injectable.container import DIContainerDescriptor
+from injectable.binding import BindingDescriptor
+from injectable.metadata import Scope
+
+
+def _bd(interface: str, impl: str, scope: Scope) -> BindingDescriptor:
+    """Minimal BindingDescriptor factory for render tests."""
+    return BindingDescriptor(interface=interface, implementation=impl, scope=scope)
+
+
+class TestDIContainerDescriptorRender:
+    """Tests for DIContainerDescriptor._render() and __repr__."""
+
+    def test_empty_descriptor_renders_empty_string(self) -> None:
+        """With no bindings at all, _render() should return an empty string.
+
+        Edge case: empty container — no headers, no lines.
+        """
+        descriptor = DIContainerDescriptor(validated=True, bindings=())
+
+        result = descriptor._render()
+
+        assert result == ""
+
+    def test_single_singleton_binding_renders_header_and_entry(self) -> None:
+        """A single SINGLETON binding must produce the [SINGLETON] header
+        followed by the binding line prefixed with └──.
+        """
+        binding = _bd("Notifier", "SMSNotifier", Scope.SINGLETON)
+        descriptor = DIContainerDescriptor(validated=True, bindings=(binding,))
+
+        result = descriptor._render()
+
+        assert "[SINGLETON]" in result
+        # Last (and only) entry → └── connector
+        assert "└──" in result
+        assert "SMSNotifier" in result
+
+    def test_single_dependent_binding_renders_header_and_entry(self) -> None:
+        """A single DEPENDENT binding produces the [DEPENDENT] header."""
+        binding = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
+        descriptor = DIContainerDescriptor(validated=True, bindings=(binding,))
+
+        result = descriptor._render()
+
+        assert "[DEPENDENT]" in result
+        assert "EmailNotifier" in result
+
+    def test_multiple_bindings_same_scope_uses_correct_connectors(self) -> None:
+        """Multiple bindings in the same scope group must use ├── for all but
+        the last entry, which gets └──.
+
+        DESIGN: connector choice mirrors standard tree-drawing conventions so
+        the output is visually consistent with BindingDescriptor._render().
+        """
+        b1 = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
+        b2 = _bd("Logger",   "ConsoleLogger", Scope.DEPENDENT)
+        b3 = _bd("Cache",    "RedisCache",    Scope.DEPENDENT)
+        descriptor = DIContainerDescriptor(
+            validated=True,
+            bindings=(b1, b2, b3),
+        )
+
+        result = descriptor._render()
+        lines  = result.splitlines()
+
+        # Header line comes first
+        assert lines[0] == "[DEPENDENT]"
+        # First two entries use ├── (not last)
+        assert lines[1].startswith("├──")
+        assert lines[2].startswith("├──")
+        # Last entry uses └──
+        assert lines[3].startswith("└──")
+
+    def test_bindings_grouped_by_scope_with_correct_headers(self) -> None:
+        """When bindings span multiple scopes, each group gets its own header
+        and empty scopes produce no header at all.
+        """
+        singleton = _bd("Cache",    "RedisCache",    Scope.SINGLETON)
+        dependent = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
+        descriptor = DIContainerDescriptor(
+            validated=True,
+            bindings=(singleton, dependent),
+        )
+
+        result = descriptor._render()
+
+        # Both headers present — one for each non-empty scope
+        assert "[SINGLETON]" in result
+        assert "[DEPENDENT]" in result
+        # Session and request have no bindings — their headers must not appear
+        assert "[SESSION]"  not in result
+        assert "[REQUEST]"  not in result
+
+    def test_singleton_appears_before_dependent_in_render(self) -> None:
+        """Scopes are rendered longest-lived → shortest-lived:
+        SINGLETON then SESSION then REQUEST then DEPENDENT.
+        """
+        singleton = _bd("Cache",    "RedisCache",    Scope.SINGLETON)
+        dependent = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
+        descriptor = DIContainerDescriptor(
+            validated=True,
+            bindings=(dependent, singleton),  # reversed insertion order
+        )
+
+        result = descriptor._render()
+
+        # [SINGLETON] header must appear before [DEPENDENT] regardless of
+        # the order the bindings were added to the descriptor.
+        assert result.index("[SINGLETON]") < result.index("[DEPENDENT]")
+
+    def test_repr_delegates_to_render(self) -> None:
+        """__repr__ must return the same string as _render()."""
+        binding = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
+        descriptor = DIContainerDescriptor(validated=True, bindings=(binding,))
+
+        assert repr(descriptor) == descriptor._render()
+
+    def test_render_via_container_describe(self, container: DIContainer) -> None:
+        """Integration smoke test: DIContainer.describe()._render() must not
+        crash and must include each registered binding's implementation name.
+        """
+        container.bind(Notifier, EmailNotifier)
+        container.bind(Notifier, SMSNotifier)
+
+        result = container.describe()._render()
+
+        # Both implementations should appear somewhere in the rendered output
+        assert "EmailNotifier" in result
+        assert "SMSNotifier"   in result

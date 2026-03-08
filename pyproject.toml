@@ -1,16 +1,13 @@
-[project]
+[tool.poetry]
 name = "injectable"
 version = "0.1.0"
 description = ""
-authors = [
-    {name = "edoardo.scarpaci",email = "edoardo.scarpaci@gmail.com"}
-]
+authors = ["edoardo.scarpaci <edoardo.scarpaci@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "pydantic (>=2.12.5,<3.0.0)"
-]
+packages = [{ include = "injectable" }]
 
+[tool.poetry.dependencies]
+python = ">=3.12"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

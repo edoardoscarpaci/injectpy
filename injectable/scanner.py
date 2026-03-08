@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import importlib
 import inspect
 import pkgutil
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from .binding import ClassBinding, ProviderBinding
 from .metadata import _has_own_metadata, _has_provider_metadata
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # Imported only for type-checking to avoid a circular import at runtime:
@@ -137,8 +139,7 @@ class DefaultContainerScanner(ContainerScanner):
                 submodule = importlib.import_module(module_info.name)
                 self._scan_module(submodule)
             except ImportError as e:
-                print(f"[DIContainer] Warning: could not import '{module_info.name}': {e}")
-
+                LOGGER.warning(f"[DIContainer] Warning: could not import '{module_info.name}': {e}")
     def _autoregister_class(self, cls: type) -> None:
         """Register a DI-annotated class into the container, skipping duplicates.
 

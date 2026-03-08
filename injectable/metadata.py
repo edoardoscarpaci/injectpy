@@ -236,3 +236,28 @@ def _is_decorated(obj: Any) -> bool:
     if callable(obj):
         return _get_provider_metadata(obj) is not None
     return False
+
+def _is_scope_leak(parent_scope: Scope, dep_scope: Scope) -> bool:
+    """
+    Return True when a dependency is shorter-lived than its parent.
+
+    A longer-lived binding (e.g. SINGLETON) holding a reference to a
+    shorter-lived one (e.g. TRANSIENT) is a scope leak — the shorter-lived
+    instance gets effectively promoted to the parent's longer lifetime.
+
+    Args:
+        parent_scope: Scope of the binding that declares the dependency.
+        dep_scope:    Scope of the dependency being injected.
+
+    Returns:
+        True if ``dep_scope`` is shorter-lived than ``parent_scope``.
+
+    Edge cases:
+        - Equal scopes → False (not a leak).
+        - dep_scope > parent_scope → False (dep outlives parent, safe).
+    """
+    # SINGLETON=1, SESSION=2, REQUEST=3, DEPENDENT=4 (higher rank = shorter-lived).
+    # A leak occurs when the dep is shorter-lived (higher rank) than the parent.
+    # Using > because: SINGLETON(1) parent + DEPENDENT(4) dep → 4 > 1 → True ✅
+    # The previous < was inverted — it flagged dep-outlives-parent as a leak instead.
+    return dep_scope.scope_rank() > parent_scope.scope_rank()
