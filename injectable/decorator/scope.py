@@ -22,6 +22,8 @@ from ..metadata import (
 
 T = TypeVar("T")
 R = TypeVar("R")
+
+
 # ─────────────────────────────────────────────────────────────────
 #  Helpers
 # ─────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ def _is_function_provider(obj: Any) -> bool:
     Distinguishes @Provider functions from @Component classes.
     """
     return callable(obj) and not isinstance(obj, type)
+
 
 # ─────────────────────────────────────────────────────────────────
 #  _make_decorator — factory for all scope decorators
@@ -60,19 +63,23 @@ def _make_decorator(scope: Scope) -> Any:
         def stamp(c: type[T]) -> type[T]:
             existing = _get_own_metadata(c)
 
-            _set_metadata(c,
-                existing.merge(                      # merge if already decorated
-                    scope     = scope,
-                    qualifier = qualifier,
-                    priority  = priority,
-                    inherited = inherited,
-                ) if existing is not None else
-                DIMetadata(                          # fresh if first decorator
-                    scope     = scope,
-                    qualifier = qualifier,
-                    priority  = priority,
-                    inherited = inherited,
-                )
+            _set_metadata(
+                c,
+                (
+                    existing.merge(  # merge if already decorated
+                        scope=scope,
+                        qualifier=qualifier,
+                        priority=priority,
+                        inherited=inherited,
+                    )
+                    if existing is not None
+                    else DIMetadata(  # fresh if first decorator
+                        scope=scope,
+                        qualifier=qualifier,
+                        priority=priority,
+                        inherited=inherited,
+                    )
+                ),
             )
             return c
 
@@ -87,8 +94,8 @@ def _make_decorator(scope: Scope) -> Any:
 #  Public scope decorators — each is just _make_decorator(Scope.X)
 # ─────────────────────────────────────────────────────────────────
 
-Component     = _make_decorator(Scope.DEPENDENT)
-Singleton     = _make_decorator(Scope.SINGLETON)
+Component = _make_decorator(Scope.DEPENDENT)
+Singleton = _make_decorator(Scope.SINGLETON)
 RequestScoped = _make_decorator(Scope.REQUEST)
 SessionScoped = _make_decorator(Scope.SESSION)
 # ─────────────────────────────────────────────────────────────────
@@ -99,6 +106,7 @@ SessionScoped = _make_decorator(Scope.SESSION)
 #  and returns the dict of fields to update — keeping _make_updater
 #  itself generic and field-agnostic.
 # ─────────────────────────────────────────────────────────────────
+
 
 def _make_updater(
     builder: Callable[..., dict[str, Any]],
@@ -134,6 +142,7 @@ def _make_updater(
 
     return updater
 
+
 # ─────────────────────────────────────────────────────────────────
 #  Public updater decorators
 # ─────────────────────────────────────────────────────────────────
@@ -147,13 +156,14 @@ Named = _make_updater(
     # Single field — only updates qualifier
     # name= maps to qualifier internally, matching Jakarta's @Named
     lambda *, name: {"qualifier": name},
-    require_args=True,      # @Named without name= is always a mistake
+    require_args=True,  # @Named without name= is always a mistake
 )
 
 Inheritable = _make_updater(
     # Updates inherited flag only
     lambda: {"inherited": True}
 )
+
 
 # ─────────────────────────────────────────────────────────────────
 #  @Provider — standalone, not a _make_updater candidate
@@ -163,6 +173,7 @@ Inheritable = _make_updater(
 @overload
 def Provider(__fn: Callable[..., R]) -> Callable[..., R]: ...
 
+
 @overload
 def Provider(
     __fn: None = ...,
@@ -171,6 +182,7 @@ def Provider(
     priority: int = 0,
     singleton: bool = False,
 ) -> Callable[[Callable[..., R]], Callable[..., R]]: ...
+
 
 def Provider(
     __fn: Any = None,
@@ -204,22 +216,31 @@ def Provider(
             await pool.connect()    # async initialisation ✅
             return pool
     """
+
     def decorator(fn: Callable[..., R]) -> Callable[..., R]:
         existing = _get_provider_metadata(fn)
 
-        _set_provider_metadata(fn,
-            existing.merge(                      # merge if already decorated
-                singleton  = singleton,
-                qualifier = qualifier,
-                priority  = priority,
-                is_async   = inspect.iscoroutinefunction(fn),  # detected once at decoration time
-            ) if existing is not None else
-            ProviderMetadata(                          # fresh if first decorator
-                singleton  = singleton,
-                qualifier = qualifier,
-                priority  = priority,
-                is_async   = inspect.iscoroutinefunction(fn),  # detected once at decoration
-            )
+        _set_provider_metadata(
+            fn,
+            (
+                existing.merge(  # merge if already decorated
+                    singleton=singleton,
+                    qualifier=qualifier,
+                    priority=priority,
+                    is_async=inspect.iscoroutinefunction(
+                        fn
+                    ),  # detected once at decoration time
+                )
+                if existing is not None
+                else ProviderMetadata(  # fresh if first decorator
+                    singleton=singleton,
+                    qualifier=qualifier,
+                    priority=priority,
+                    is_async=inspect.iscoroutinefunction(
+                        fn
+                    ),  # detected once at decoration
+                )
+            ),
         )
 
         return fn

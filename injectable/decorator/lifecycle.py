@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Callable, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
 # ─────────────────────────────────────────────────────────────────
@@ -9,6 +9,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 #  Stored directly on the function via __dict__
 #  Same pattern as DIMetadata and ProviderMetadata
 # ─────────────────────────────────────────────────────────────────
+
 
 class LifecycleMarker:
     """
@@ -22,10 +23,10 @@ class LifecycleMarker:
     but now __get__ never fires because we're not a descriptor.
     """
 
-    __slots__ = ("fn_name", "is_async","fn_module")
+    __slots__ = ("fn_name", "is_async", "fn_module")
 
     def __init__(self, fn: Callable[..., Any]) -> None:
-        self.fn_name  = fn.__name__     # store name only — not the function itself
+        self.fn_name = fn.__name__  # store name only — not the function itself
         self.fn_module = fn.__module__
         self.is_async = inspect.iscoroutinefunction(fn)
 
@@ -40,21 +41,23 @@ class LifecycleMarker:
         if not isinstance(other, LifecycleMarker):
             return NotImplemented
         return self.fn_name == other.fn_name and self.is_async == other.is_async
-    
+
     def __hash__(self) -> int:
         return hash(self.fn_name + self.fn_module)
-    
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.fn_name!r}, is_async={self.is_async})"
 
 
 class PostConstructMarker(LifecycleMarker):
     """Marks a method as @PostConstruct."""
+
     __slots__ = ()
 
 
 class PreDestroyMarker(LifecycleMarker):
     """Marks a method as @PreDestroy."""
+
     __slots__ = ()
 
 
@@ -64,6 +67,7 @@ class PreDestroyMarker(LifecycleMarker):
 # ─────────────────────────────────────────────────────────────────
 
 _LIFECYCLE_ATTR = "__di_lifecycle__"
+
 
 def _get_lifecycle_marker(fn: Callable[..., Any]) -> LifecycleMarker | None:
     """Reads LifecycleMarker from a function's own __dict__.
@@ -86,6 +90,7 @@ def _set_lifecycle_marker(fn: Callable[..., Any], marker: LifecycleMarker) -> No
     """Stamps LifecycleMarker onto a function."""
     fn.__dict__[_LIFECYCLE_ATTR] = marker
 
+
 def _find_lifecycle_hook(
     cls: type,
     marker_type: type[LifecycleMarker],
@@ -106,8 +111,8 @@ def _find_lifecycle_hook(
         for name, val in vars(base).items():
             if not callable(val):
                 continue
-            marker = _get_lifecycle_marker(val)         # ✅ reads from fn.__dict__
-            if isinstance(marker, marker_type):         # ✅ isinstance — type is signal
+            marker = _get_lifecycle_marker(val)  # ✅ reads from fn.__dict__
+            if isinstance(marker, marker_type):  # ✅ isinstance — type is signal
                 found.append((base, name, marker))
 
     if not found:
@@ -132,6 +137,7 @@ def _find_post_construct(cls: type) -> LifecycleMarker | None:
 def _find_pre_destroy(cls: type) -> LifecycleMarker | None:
     return _find_lifecycle_hook(cls, PreDestroyMarker)
 
+
 # ─────────────────────────────────────────────────────────────────
 #  Public decorators — stamp marker onto the function, return it unchanged
 # ─────────────────────────────────────────────────────────────────
@@ -148,7 +154,7 @@ def PostConstruct(fn: F) -> F:
     Equivalent to Jakarta's @PostConstruct.
     """
     _set_lifecycle_marker(fn, PostConstructMarker(fn))
-    return fn   # ✅ return original function — no wrapping, no descriptor
+    return fn  # ✅ return original function — no wrapping, no descriptor
 
 
 def PreDestroy(fn: F) -> F:
@@ -160,4 +166,4 @@ def PreDestroy(fn: F) -> F:
     Equivalent to Jakarta's @PreDestroy.
     """
     _set_lifecycle_marker(fn, PreDestroyMarker(fn))
-    return fn   # ✅ return original function — no wrapping, no descriptor
+    return fn  # ✅ return original function — no wrapping, no descriptor

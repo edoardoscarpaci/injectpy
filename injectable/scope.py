@@ -4,7 +4,7 @@ import uuid
 import threading
 from contextlib import contextmanager, asynccontextmanager
 from contextvars import ContextVar
-from typing import Generator, AsyncGenerator,Any
+from typing import Generator, AsyncGenerator, Any
 
 
 class ScopeContext:
@@ -123,7 +123,9 @@ class ScopeContext:
     # ── Session scope — async ─────────────────────────────────────
 
     @asynccontextmanager
-    async def asession(self, session_id: str | None = None) -> AsyncGenerator[str, None]:
+    async def asession(
+        self, session_id: str | None = None
+    ) -> AsyncGenerator[str, None]:
         """
         Activates a session scope context (async version).
 
@@ -168,14 +170,14 @@ class ScopeContext:
         Returns the cache for the currently active request.
         ContextVar.get() returns the value for THIS task/thread only.
         """
-        request_id = self._request_id.get()     # ✅ isolated per task
+        request_id = self._request_id.get()  # ✅ isolated per task
         if request_id is None:
             return None
         return self._request_caches.get(request_id)
 
     def get_session_cache(self) -> dict[Any, object] | None:
         """Returns the cache for the currently active session."""
-        session_id = self._session_id.get()     # ✅ isolated per task
+        session_id = self._session_id.get()  # ✅ isolated per task
         if session_id is None:
             return None
         return self._session_caches.get(session_id)

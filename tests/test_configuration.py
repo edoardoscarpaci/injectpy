@@ -16,12 +16,13 @@ parameters that are resolved by the container at install() time. The module inst
 is then passed as `self` to every @Provider method as a bound method. This is the
 key difference from Guice-style where modules are plain objects with no injection.
 """
+
 from __future__ import annotations
 
 import pytest
 
 from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Provider, Singleton
+from injectable.decorator.scope import Provider, Singleton
 from injectable.module import Configuration, _is_module
 
 
@@ -29,11 +30,13 @@ from injectable.module import Configuration, _is_module
 #  @Configuration decorator tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestConfigurationDecorator:
     """Tests for the @Configuration marker decorator."""
 
     def test_stamps_module_marker_on_class(self) -> None:
         """@Configuration must set __di_module__ = True on the class."""
+
         @Configuration
         class MyModule:
             pass
@@ -42,6 +45,7 @@ class TestConfigurationDecorator:
 
     def test_undecorated_class_is_not_a_module(self) -> None:
         """_is_module() must return False for a plain class."""
+
         class NotAModule:
             pass
 
@@ -49,6 +53,7 @@ class TestConfigurationDecorator:
 
     def test_returns_same_class(self) -> None:
         """@Configuration must return the original class unchanged (no wrapping)."""
+
         class Original:
             pass
 
@@ -60,6 +65,7 @@ class TestConfigurationDecorator:
         """Module marker is checked on the class's own __dict__ only.
         A subclass of a @Configuration class is NOT automatically a module.
         """
+
         @Configuration
         class Base:
             pass
@@ -75,6 +81,7 @@ class TestConfigurationDecorator:
 #  Domain types for module tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class Repository:
     """Abstract interface for a data repository."""
 
@@ -87,11 +94,13 @@ class Cache:
 #  install() tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestInstall:
     """Tests for container.install() with @Configuration modules."""
 
     def test_basic_provider_method_registered(self, container: DIContainer) -> None:
         """install() must register each @Provider method as a binding."""
+
         @Configuration
         class DataModule:
             @Provider
@@ -105,6 +114,7 @@ class TestInstall:
 
     def test_multiple_providers_in_one_module(self, container: DIContainer) -> None:
         """install() must register ALL @Provider methods in the module."""
+
         @Configuration
         class InfraModule:
             @Provider
@@ -127,6 +137,7 @@ class TestInstall:
         The module instance is created with its own dependencies resolved
         from the container. This is the key Spring-style feature.
         """
+
         @Singleton
         class Config:
             prefix = "prod"
@@ -153,6 +164,7 @@ class TestInstall:
 
     def test_provider_metadata_preserved(self, container: DIContainer) -> None:
         """Provider qualifier, priority, and singleton=True must survive install()."""
+
         @Configuration
         class DataModule:
             @Provider(qualifier="primary", priority=1, singleton=True)
@@ -194,6 +206,7 @@ class TestInstall:
 
     def test_raises_type_error_for_non_module(self, container: DIContainer) -> None:
         """install() must raise TypeError when the class has no @Configuration decorator."""
+
         class BareClass:
             @Provider
             def make_repo(self) -> Repository:
@@ -206,6 +219,7 @@ class TestInstall:
         self, container: DIContainer
     ) -> None:
         """Module with no __init__ (default) must install without error."""
+
         @Configuration
         class SimpleModule:
             @Provider
@@ -221,11 +235,13 @@ class TestInstall:
 #  ainstall() tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestAinstall:
     """Tests for container.ainstall() — async module installation."""
 
     async def test_ainstall_registers_providers(self, container: DIContainer) -> None:
         """ainstall() must register @Provider methods just like sync install()."""
+
         @Configuration
         class DataModule:
             @Provider
@@ -239,6 +255,7 @@ class TestAinstall:
 
     async def test_ainstall_raises_for_non_module(self, container: DIContainer) -> None:
         """ainstall() must raise TypeError when class is not @Configuration decorated."""
+
         class BareClass:
             @Provider
             def make_cache(self) -> Cache:
@@ -256,6 +273,7 @@ class TestAinstall:
         async-only providers (e.g. db pool init), the module's constructor deps
         can only be resolved via the async path.
         """
+
         @Provider(singleton=True)
         async def make_config() -> Cache:
             # Simulates an async resource (e.g. connection pool startup)

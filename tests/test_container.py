@@ -14,18 +14,21 @@ Covered:
       the previous one on exit
     - DIContainer as a context manager calls shutdown() on __exit__
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.container import DIContainer
+from injectable.container import DIContainer, DIContainerDescriptor
 from injectable.decorator.scope import Component, Provider, Singleton
-from injectable.exceptions import ClassBindingNotDecoratedError
+from injectable.binding import BindingDescriptor
+from injectable.metadata import Scope
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Domain fixtures
 # ─────────────────────────────────────────────────────────────────
+
 
 class Notifier:
     """Abstract-style interface."""
@@ -55,6 +58,7 @@ class PushFallbackNotifier(Notifier):
 #  Registration tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestRegistration:
     """Tests for bind(), register(), and provide()."""
 
@@ -72,8 +76,11 @@ class TestRegistration:
         assert binding.interface is EmailNotifier
         assert binding.implementation is EmailNotifier  # type: ignore[union-attr]
 
-    def test_register_raises_for_undecorated_class(self, container: DIContainer) -> None:
+    def test_register_raises_for_undecorated_class(
+        self, container: DIContainer
+    ) -> None:
         """register() should raise TypeError when the class has no DI decorator."""
+
         class Bare:
             pass
 
@@ -82,6 +89,7 @@ class TestRegistration:
 
     def test_provide_adds_provider_binding(self, container: DIContainer) -> None:
         """provide(fn) should wrap the function in a ProviderBinding."""
+
         @Provider
         def make_notifier() -> Notifier:
             return EmailNotifier()
@@ -95,11 +103,11 @@ class TestRegistration:
         next get() re-runs validate_bindings() over the full updated registry.
         """
         container.bind(Notifier, EmailNotifier)
-        container.get(Notifier)         # triggers validate_bindings() → _validated=True
+        container.get(Notifier)  # triggers validate_bindings() → _validated=True
 
         assert container._validated is True
 
-        container.bind(Notifier, SMSNotifier)   # new binding added
+        container.bind(Notifier, SMSNotifier)  # new binding added
 
         # _validated must be reset — next get() will re-validate
         assert container._validated is False
@@ -108,6 +116,7 @@ class TestRegistration:
 # ─────────────────────────────────────────────────────────────────
 #  Resolution tests — get()
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestGet:
     """Tests for the sync get() resolution path."""
@@ -130,6 +139,7 @@ class TestGet:
 
     def test_resolves_provider_function(self, container: DIContainer) -> None:
         """get() should call the @Provider function and return its result."""
+
         @Provider
         def make_notifier() -> Notifier:
             return EmailNotifier()
@@ -139,13 +149,18 @@ class TestGet:
 
         assert isinstance(result, EmailNotifier)
 
-    def test_raises_lookup_error_for_unregistered_type(self, container: DIContainer) -> None:
+    def test_raises_lookup_error_for_unregistered_type(
+        self, container: DIContainer
+    ) -> None:
         """get() must raise LookupError when no binding matches the requested type."""
         with pytest.raises(LookupError, match="No binding found"):
             container.get(Notifier)
 
-    def test_raises_for_async_provider_on_sync_get(self, container: DIContainer) -> None:
+    def test_raises_for_async_provider_on_sync_get(
+        self, container: DIContainer
+    ) -> None:
         """get() must raise RuntimeError when the best match is an async provider."""
+
         @Provider
         async def make_async() -> Notifier:
             return EmailNotifier()
@@ -155,7 +170,9 @@ class TestGet:
         with pytest.raises(RuntimeError, match="async provider"):
             container.get(Notifier)
 
-    def test_qualifier_filter_selects_matching_binding(self, container: DIContainer) -> None:
+    def test_qualifier_filter_selects_matching_binding(
+        self, container: DIContainer
+    ) -> None:
         """get(T, qualifier=...) must return only the binding with that qualifier."""
         container.bind(Notifier, EmailNotifier)
         container.bind(Notifier, PushNotifier)
@@ -164,16 +181,20 @@ class TestGet:
 
         assert isinstance(result, PushNotifier)
 
-    def test_qualifier_filter_raises_when_no_match(self, container: DIContainer) -> None:
+    def test_qualifier_filter_raises_when_no_match(
+        self, container: DIContainer
+    ) -> None:
         """get(T, qualifier='missing') raises LookupError when qualifier is absent."""
         container.bind(Notifier, EmailNotifier)
 
         with pytest.raises(LookupError):
             container.get(Notifier, qualifier="does-not-exist")
 
-    def test_priority_filter_selects_exact_priority(self, container: DIContainer) -> None:
+    def test_priority_filter_selects_exact_priority(
+        self, container: DIContainer
+    ) -> None:
         """get(T, priority=N) returns the binding with that exact priority value."""
-        container.bind(Notifier, PushNotifier)          # priority=1
+        container.bind(Notifier, PushNotifier)  # priority=1
         container.bind(Notifier, PushFallbackNotifier)  # priority=2
 
         result = container.get(Notifier, qualifier="push", priority=2)
@@ -182,7 +203,7 @@ class TestGet:
 
     def test_highest_priority_wins_without_filter(self, container: DIContainer) -> None:
         """Without a priority filter, min(priority) wins — lower number = higher priority."""
-        container.bind(Notifier, PushNotifier)          # priority=1
+        container.bind(Notifier, PushNotifier)  # priority=1
         container.bind(Notifier, PushFallbackNotifier)  # priority=2
 
         # Both have qualifier="push", so both are candidates.
@@ -195,6 +216,7 @@ class TestGet:
 # ─────────────────────────────────────────────────────────────────
 #  Resolution tests — get_all()
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestGetAll:
     """Tests for the sync get_all() multi-binding resolution path."""
@@ -214,7 +236,7 @@ class TestGetAll:
 
     def test_results_sorted_by_priority_ascending(self, container: DIContainer) -> None:
         """get_all() should return instances sorted by ascending priority (lowest first)."""
-        container.bind(Notifier, PushNotifier)          # priority=1
+        container.bind(Notifier, PushNotifier)  # priority=1
         container.bind(Notifier, PushFallbackNotifier)  # priority=2
 
         results = container.get_all(Notifier, qualifier="push")
@@ -230,8 +252,8 @@ class TestGetAll:
 
     def test_qualifier_filter_in_get_all(self, container: DIContainer) -> None:
         """get_all(T, qualifier=...) must exclude bindings with other qualifiers."""
-        container.bind(Notifier, EmailNotifier)     # qualifier=None
-        container.bind(Notifier, PushNotifier)      # qualifier="push"
+        container.bind(Notifier, EmailNotifier)  # qualifier=None
+        container.bind(Notifier, PushNotifier)  # qualifier="push"
 
         results = container.get_all(Notifier, qualifier="push")
 
@@ -242,6 +264,7 @@ class TestGetAll:
 # ─────────────────────────────────────────────────────────────────
 #  Global container tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestGlobalContainer:
     """Tests for DIContainer.current() and DIContainer.scoped()."""
@@ -289,10 +312,10 @@ class TestGlobalContainer:
                 destroyed.append(True)
 
         container.register(Resource)
-        container.get(Resource)     # caches the singleton
+        container.get(Resource)  # caches the singleton
 
         with container:
-            pass                    # __exit__ calls shutdown()
+            pass  # __exit__ calls shutdown()
 
         # @PreDestroy was called during shutdown
         assert destroyed == [True]
@@ -301,6 +324,7 @@ class TestGlobalContainer:
 # ─────────────────────────────────────────────────────────────────
 #  Async global accessor tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestAcurrent:
     """Tests for DIContainer.acurrent() — the async global accessor."""
@@ -325,7 +349,7 @@ class TestAcurrent:
         sync and async code must see the same container regardless of which
         accessor they use.
         """
-        sync_global  = DIContainer.current()
+        sync_global = DIContainer.current()
         async_global = await DIContainer.acurrent()
 
         assert sync_global is async_global
@@ -334,6 +358,7 @@ class TestAcurrent:
 # ─────────────────────────────────────────────────────────────────
 #  Provider with injected dependencies
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestProviderWithDeps:
     """Verify that @Provider functions can declare injectable parameters."""
@@ -346,6 +371,7 @@ class TestProviderWithDeps:
         @Provider functions participate in full dependency injection — they are
         not limited to zero-argument factories.
         """
+
         @Singleton
         class ConnectionPool:
             url = "postgres://localhost/db"
@@ -368,6 +394,7 @@ class TestProviderWithDeps:
         self, container: DIContainer
     ) -> None:
         """An async @Provider function must also have its parameters injected."""
+
         @Singleton
         class Settings:
             host = "redis://localhost"
@@ -388,6 +415,7 @@ class TestProviderWithDeps:
 
     def test_provider_dep_chain(self, container: DIContainer) -> None:
         """Provider A can depend on the result of Provider B — full chain resolved."""
+
         @Singleton
         class Config:
             dsn = "sqlite://:memory:"
@@ -423,10 +451,6 @@ class TestProviderWithDeps:
 # Build BindingDescriptor directly so render tests are independent of the
 # container resolution stack.  If DIContainer.describe() ever changes, only
 # the integration tests below would break — not the rendering tests.
-
-from injectable.container import DIContainerDescriptor
-from injectable.binding import BindingDescriptor
-from injectable.metadata import Scope
 
 
 def _bd(interface: str, impl: str, scope: Scope) -> BindingDescriptor:
@@ -480,15 +504,15 @@ class TestDIContainerDescriptorRender:
         the output is visually consistent with BindingDescriptor._render().
         """
         b1 = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
-        b2 = _bd("Logger",   "ConsoleLogger", Scope.DEPENDENT)
-        b3 = _bd("Cache",    "RedisCache",    Scope.DEPENDENT)
+        b2 = _bd("Logger", "ConsoleLogger", Scope.DEPENDENT)
+        b3 = _bd("Cache", "RedisCache", Scope.DEPENDENT)
         descriptor = DIContainerDescriptor(
             validated=True,
             bindings=(b1, b2, b3),
         )
 
         result = descriptor._render()
-        lines  = result.splitlines()
+        lines = result.splitlines()
 
         # Header line comes first
         assert lines[0] == "[DEPENDENT]"
@@ -502,7 +526,7 @@ class TestDIContainerDescriptorRender:
         """When bindings span multiple scopes, each group gets its own header
         and empty scopes produce no header at all.
         """
-        singleton = _bd("Cache",    "RedisCache",    Scope.SINGLETON)
+        singleton = _bd("Cache", "RedisCache", Scope.SINGLETON)
         dependent = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
         descriptor = DIContainerDescriptor(
             validated=True,
@@ -515,14 +539,14 @@ class TestDIContainerDescriptorRender:
         assert "[SINGLETON]" in result
         assert "[DEPENDENT]" in result
         # Session and request have no bindings — their headers must not appear
-        assert "[SESSION]"  not in result
-        assert "[REQUEST]"  not in result
+        assert "[SESSION]" not in result
+        assert "[REQUEST]" not in result
 
     def test_singleton_appears_before_dependent_in_render(self) -> None:
         """Scopes are rendered longest-lived → shortest-lived:
         SINGLETON then SESSION then REQUEST then DEPENDENT.
         """
-        singleton = _bd("Cache",    "RedisCache",    Scope.SINGLETON)
+        singleton = _bd("Cache", "RedisCache", Scope.SINGLETON)
         dependent = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
         descriptor = DIContainerDescriptor(
             validated=True,
@@ -553,4 +577,4 @@ class TestDIContainerDescriptorRender:
 
         # Both implementations should appear somewhere in the rendered output
         assert "EmailNotifier" in result
-        assert "SMSNotifier"   in result
+        assert "SMSNotifier" in result

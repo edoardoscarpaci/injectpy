@@ -11,22 +11,25 @@ from typing import (
     Callable,
     ClassVar,
     Final,
+    Iterator,
     TypeVar,
     get_args,
     get_origin,
     get_type_hints,
 )
 
-from dataclasses import ( 
-    dataclass,
-    field
-)
-from .binding import AnyBinding, ClassBinding, ProviderBinding,BindingDescriptor
+from dataclasses import dataclass, field
+from .binding import AnyBinding, ClassBinding, ProviderBinding, BindingDescriptor
 from .scanner import ContainerScanner, DefaultContainerScanner
-from .metadata import Scope,ScopeLeak, _is_scope_leak, _DI_METADATA_ATTR
+from .metadata import Scope, ScopeLeak, _is_scope_leak, _DI_METADATA_ATTR
 from .scope import ScopeContext
-from .type import InjectMeta, LazyMeta, LazyProxy, _has_injectable_metadata, _get_injectable_metadata
-from .exceptions import CircularDependencyError, ProviderBindingNotDecoratedError
+from .type import (
+    InjectMeta,
+    LazyMeta,
+    LazyProxy,
+    _has_injectable_metadata,
+)
+from .exceptions import CircularDependencyError
 from .decorator.lifecycle import LifecycleMarker
 from .metadata import _get_provider_metadata
 
@@ -47,6 +50,7 @@ _resolution_stack: ContextVar[list[type]] = ContextVar(
 # (resolved_value is _UNRESOLVED) must remain stable for the lifetime of
 # the process.
 _UNRESOLVED: Final[object] = object()
+
 
 def _current_stack() -> list[type]:
     """Returns the current resolution stack for this thread/task."""
@@ -71,6 +75,7 @@ def _format_cycle(stack: list[type], cls: type) -> str:
     chain = stack + [cls]
     return " → ".join(c.__name__ for c in chain)
 
+
 # ─────────────────────────────────────────────────────────────────
 #  Scoped container context manager — sync + async
 # ─────────────────────────────────────────────────────────────────
@@ -83,13 +88,14 @@ class _ScopedContainer:
         with DIContainer.scoped() as c: ...
         async with DIContainer.scoped() as c: ...
     """
+
     def __init__(self) -> None:
-        self._previous:  DIContainer | None = None
+        self._previous: DIContainer | None = None
         self._container: DIContainer | None = None
 
     def _install(self) -> DIContainer:
         """Creates and installs a fresh container as the global."""
-        self._previous  = DIContainer._global
+        self._previous = DIContainer._global
         self._container = DIContainer()
         DIContainer._global = self._container
         return self._container
@@ -118,23 +124,23 @@ class _ScopedContainer:
 
 @dataclass
 class DIContainerDescriptor:
-    validated : bool
-    bindings : tuple[BindingDescriptor, ...] = field(default_factory=tuple)
+    validated: bool
+    bindings: tuple[BindingDescriptor, ...] = field(default_factory=tuple)
 
     @property
     def dependent_bindings(self) -> list[BindingDescriptor]:
-        return [b for b in self.bindings if b.scope == Scope.DEPENDENT ]
+        return [b for b in self.bindings if b.scope == Scope.DEPENDENT]
 
     @property
-    def singleton_bindings(self)-> list[BindingDescriptor]:
+    def singleton_bindings(self) -> list[BindingDescriptor]:
         return [b for b in self.bindings if b.scope == Scope.SINGLETON]
-    
+
     @property
-    def session_bindings(self)-> list[BindingDescriptor]:
+    def session_bindings(self) -> list[BindingDescriptor]:
         return [b for b in self.bindings if b.scope == Scope.SESSION]
-    
+
     @property
-    def request_bindings(self)-> list[BindingDescriptor]:
+    def request_bindings(self) -> list[BindingDescriptor]:
         return [b for b in self.bindings if b.scope == Scope.REQUEST]
 
     def _render(self) -> str:
@@ -172,8 +178,8 @@ class DIContainerDescriptor:
         # 3.7+ but is less explicit about intentional ordering.
         groups: list[tuple[str, list[BindingDescriptor]]] = [
             ("[SINGLETON]", self.singleton_bindings),
-            ("[SESSION]",   self.session_bindings),
-            ("[REQUEST]",   self.request_bindings),
+            ("[SESSION]", self.session_bindings),
+            ("[REQUEST]", self.request_bindings),
             ("[DEPENDENT]", self.dependent_bindings),
         ]
 
@@ -196,7 +202,7 @@ class DIContainerDescriptor:
                 # We prefix the first line with the box connector and subsequent
                 # lines with the matching indentation so the tree stays aligned.
                 binding_lines = str(binding).splitlines()
-                continuation  = "    " if i == last_idx else "│   "
+                continuation = "    " if i == last_idx else "│   "
 
                 lines.append(f"{connector}{binding_lines[0]}")
                 for extra_line in binding_lines[1:]:
@@ -236,12 +242,13 @@ class DIContainerDescriptor:
             print(json.dumps(descriptor.to_dict(), indent=2))
         """
         return {
-            "validated":      self.validated,
+            "validated": self.validated,
             "dependent_bindings": [b.to_dict() for b in self.dependent_bindings],
             "singleton_bindings": [b.to_dict() for b in self.singleton_bindings],
-            "session_bindings" : [b.to_dict() for b in self.session_bindings],
-            "request_bindings" : [b.to_dict() for b in self.request_bindings]
+            "session_bindings": [b.to_dict() for b in self.session_bindings],
+            "request_bindings": [b.to_dict() for b in self.request_bindings],
         }
+
 
 # ─────────────────────────────────────────────────────────────────
 #  DIContainer
@@ -284,8 +291,10 @@ class DIContainer:
     _global: ClassVar[DIContainer | None] = None
     # Two locks — one per execution context
     # threading.Lock for sync callers, asyncio.Lock for async callers
-    _sync_lock:  ClassVar[threading.Lock] = threading.Lock()
-    _async_lock: ClassVar[asyncio.Lock | None] = None   # created lazily — needs event loop
+    _sync_lock: ClassVar[threading.Lock] = threading.Lock()
+    _async_lock: ClassVar[asyncio.Lock | None] = (
+        None  # created lazily — needs event loop
+    )
 
     def __init__(self) -> None:
         """Initialise an empty container with no bindings.
@@ -296,7 +305,7 @@ class DIContainer:
         Returns:
             None
         """
-        self._bindings:        list[AnyBinding] = []
+        self._bindings: list[AnyBinding] = []
         self._singleton_cache: dict[Any, object] = {}
         self.scope_context = ScopeContext()
         self._scanner: ContainerScanner = DefaultContainerScanner(self)
@@ -346,7 +355,7 @@ class DIContainer:
     def reset(cls) -> None:
         """Resets the global container — use in test teardown."""
         with cls._sync_lock:
-            cls._global    = None
+            cls._global = None
             cls._async_lock = None  # reset lock too — next acurrent() recreates it
 
     @classmethod
@@ -466,7 +475,9 @@ class DIContainer:
                     f"use `await container.awarm_up()` instead."
                 )
 
-    def warm_up(self, qualifier: str | None = None, priority: int | None = None) -> None:
+    def warm_up(
+        self, qualifier: str | None = None, priority: int | None = None
+    ) -> None:
         """
         Eagerly instantiate all singleton bindings in the container (sync version).
 
@@ -504,7 +515,9 @@ class DIContainer:
         # Collect first so we can validate the entire list before touching the cache.
         # This is the key difference from the previous implementation — we no longer
         # raise mid-loop after partially populating the cache.
-        singleton_bindings = self._filter_singleton(qualifier=qualifier, priority=priority)
+        singleton_bindings = self._filter_singleton(
+            qualifier=qualifier, priority=priority
+        )
 
         # All-or-nothing guard — raises if any async provider is present,
         # before _instantiate_sync is called even once.
@@ -514,7 +527,9 @@ class DIContainer:
             # Discard the return value — only the cache side-effect matters here.
             _ = self._instantiate_sync(binding)
 
-    async def awarm_up(self, qualifier: str | None = None, priority: int | None = None) -> None:
+    async def awarm_up(
+        self, qualifier: str | None = None, priority: int | None = None
+    ) -> None:
         """
         Eagerly instantiate all singleton bindings in the container (async version).
 
@@ -550,7 +565,9 @@ class DIContainer:
             await container.awarm_up(qualifier="db")
         """
         # Shared helper — same filter semantics as warm_up, documented once.
-        singleton_bindings = self._filter_singleton(qualifier=qualifier, priority=priority)
+        singleton_bindings = self._filter_singleton(
+            qualifier=qualifier, priority=priority
+        )
         for binding in singleton_bindings:
             if isinstance(binding, ProviderBinding) and binding.is_async:
                 # Async provider — must be awaited. Calling without await would
@@ -562,7 +579,7 @@ class DIContainer:
                 # asyncio.to_thread() would add unnecessary overhead for pure
                 # in-memory construction that doesn't block the event loop.
                 _ = self._instantiate_sync(binding)
-    
+
     # ── Registration ─────────────────────────────────────────────
     def bind(self, interface: type[T], implementation: type[T]) -> None:
         """Bind an interface type to a concrete implementation class.
@@ -575,7 +592,7 @@ class DIContainer:
             None
         """
         self._validated = False
-        self._localns_cache = None          # new binding — localns must be rebuilt
+        self._localns_cache = None  # new binding — localns must be rebuilt
         self._bindings.append(ClassBinding(interface, implementation))
 
     def register(self, cls: type[T]) -> None:
@@ -599,7 +616,7 @@ class DIContainer:
                 f"{cls.__name__} must be decorated with @Component or @Singleton."
             )
         self._validated = False
-        self._localns_cache = None          # new binding — localns must be rebuilt
+        self._localns_cache = None  # new binding — localns must be rebuilt
         self._bindings.append(ClassBinding(cls, cls))
 
     def provide(self, fn: Callable[..., Any]) -> None:
@@ -615,11 +632,13 @@ class DIContainer:
             None
         """
         self._validated = False
-        self._localns_cache = None          # new binding — localns must be rebuilt
+        self._localns_cache = None  # new binding — localns must be rebuilt
         self._bindings.append(ProviderBinding(fn))
 
     # ── Sync resolution ───────────────────────────────────────────
-    def get(self, cls: type[T], qualifier: str | None = None, priority: int | None = None) -> T:
+    def get(
+        self, cls: type[T], qualifier: str | None = None, priority: int | None = None
+    ) -> T:
         """Resolve a single instance synchronously.
 
         Selects the highest-priority binding that matches *cls* (and the
@@ -638,7 +657,7 @@ class DIContainer:
             RuntimeError: If the best matching binding is an async provider —
                 use :meth:`aget` instead.
         """
-        best = self._get_best_candidate(cls,qualifier=qualifier,priority=priority)
+        best = self._get_best_candidate(cls, qualifier=qualifier, priority=priority)
         # Guard — async providers cannot be resolved synchronously
         if isinstance(best, ProviderBinding) and best.is_async:
             raise RuntimeError(
@@ -674,8 +693,7 @@ class DIContainer:
 
         # Guard — fail early if any candidate is async
         async_providers = [
-            b for b in candidates
-            if isinstance(b, ProviderBinding) and b.is_async
+            b for b in candidates if isinstance(b, ProviderBinding) and b.is_async
         ]
         if async_providers:
             names = ", ".join(b.fn.__name__ for b in async_providers)
@@ -718,7 +736,7 @@ class DIContainer:
         Example:
             svc = await container.aget(NotificationService)
         """
-        best = self._get_best_candidate(cls,qualifier=qualifier,priority=priority)
+        best = self._get_best_candidate(cls, qualifier=qualifier, priority=priority)
         if not self._validated:
             self.validate_bindings()
             self._validated = True
@@ -777,7 +795,8 @@ class DIContainer:
             A (possibly empty) list of matching :class:`~injectable.binding.AnyBinding` objects.
         """
         return [
-            b for b in self._bindings
+            b
+            for b in self._bindings
             # DESIGN: all three predicates are in one comprehension — avoids building
             # two throwaway intermediate lists when optional filters are active.
             if issubclass(b.interface, cls)
@@ -814,15 +833,18 @@ class DIContainer:
         Async safety:   ✅ Safe — no await points, no shared mutable state written.
         """
         return [
-            b for b in self._bindings
+            b
+            for b in self._bindings
             # DESIGN: all three predicates are in one comprehension — avoids building
             # two throwaway intermediate lists when optional filters are active.
             if b.scope == Scope.SINGLETON
             and (qualifier is None or b.qualifier == qualifier)
             and (priority is None or b.priority == priority)
         ]
-    
-    def _get_best_candidate(self, cls: type[T], qualifier: str | None = None, priority: int | None = None) -> AnyBinding:
+
+    def _get_best_candidate(
+        self, cls: type[T], qualifier: str | None = None, priority: int | None = None
+    ) -> AnyBinding:
         """
         Return the highest-priority binding for the requested type.
 
@@ -847,7 +869,7 @@ class DIContainer:
                 + (f" qualifier={qualifier!r}" if qualifier else "")
                 + ". Did you forget container.bind() or container.provide()?"
             )
-        
+
         return max(candidates, key=lambda b: b.priority)
 
     def _get_cache(self, binding: AnyBinding) -> dict[Any, object] | None:
@@ -926,13 +948,13 @@ class DIContainer:
         Returns:
             The (possibly cached) resolved instance.
         """
-        key   = self._get_cache_key(binding)
+        key = self._get_cache_key(binding)
         cache = self._get_cache(binding)
 
         if cache is not None and key in cache:
             return cache[key]
-        
-        instance = binding.create(self)         # ✅ binding owns creation logic
+
+        instance = binding.create(self)  # ✅ binding owns creation logic
 
         if cache is not None:
             cache[key] = instance
@@ -951,7 +973,7 @@ class DIContainer:
         Returns:
             The (possibly cached) resolved instance.
         """
-        key   = self._get_cache_key(binding)
+        key = self._get_cache_key(binding)
         cache = self._get_cache(binding)
 
         if cache is not None and key in cache:
@@ -1040,31 +1062,13 @@ class DIContainer:
         Raises:
             LookupError: If a required parameter (no default) cannot be resolved.
         """
-        try:
-            # _build_localns() supplies a cached dict of every registered
-            # interface/implementation so that locally-defined classes (e.g.
-            # classes defined inside test functions) are found when Python
-            # evaluates PEP-563 string annotations.  See _build_localns for
-            # the full rationale and caching strategy.
-            hints = get_type_hints(fn, include_extras=True, localns=self._build_localns())
-        except Exception:
-            hints = {}
-
-        hints.pop("return", None)
-        sig = inspect.signature(fn)
         resolved: dict[str, Any] = {}
-
-        for param_name, hint in hints.items():
-            param = sig.parameters.get(param_name)
+        for param_name, hint, param in self._iter_resolvable_params(fn):
             resolved_value = self._resolve_hint_sync(hint, param_name, owner_name)
-
             if resolved_value is _UNRESOLVED:
-                # No binding found — use default or fail
-                if param and param.default is inspect.Parameter.empty:
-                    raise LookupError(
-                        f"Cannot resolve '{param_name}: {hint}' in '{owner_name}'. "
-                        f"Bind it or provide a default value."
-                    )
+                self._check_param_required(
+                    param_name=param_name, hint=hint, param=param
+                )
             else:
                 resolved[param_name] = resolved_value
 
@@ -1090,31 +1094,103 @@ class DIContainer:
         Raises:
             LookupError: If a required parameter (no default) cannot be resolved.
         """
-        try:
-            # Async mirror — same _build_localns() strategy as _collect_kwargs_sync.
-            hints = get_type_hints(fn, include_extras=True, localns=self._build_localns())
-        except Exception:
-            hints = {}
-
-        hints.pop("return", None)
-        sig = inspect.signature(fn)
         resolved: dict[str, Any] = {}
-
-        for param_name, hint in hints.items():
-            param = sig.parameters.get(param_name)
-            resolved_value = await self._resolve_hint_async(hint, param_name, owner_name)
-
+        for param_name, hint, param in self._iter_resolvable_params(fn):
+            resolved_value = await self._resolve_hint_async(
+                hint, param_name, owner_name
+            )
             if resolved_value is _UNRESOLVED:
-                if param and param.default is inspect.Parameter.empty:
-                    raise LookupError(
-                        f"Cannot resolve '{param_name}: {hint}' in '{owner_name}'. "
-                        f"Bind it or provide a default value."
-                    )
+                self._check_param_required(
+                    param_name=param_name, hint=hint, param=param
+                )
             else:
                 resolved[param_name] = resolved_value
 
         return resolved
-    
+
+    def _check_param_required(
+        self,
+        param_name: str,
+        hint: Any,
+        param: inspect.Parameter | None,
+    ) -> None:
+        """Raise LookupError if a parameter with no binding is also non-optional.
+
+        Called by both sync and async collect-kwargs paths after the resolver
+        returns ``_UNRESOLVED``, to centralise the "is this param required?" check.
+
+        Args:
+            param_name: Name of the parameter that could not be resolved.
+            hint:       The type annotation (used in the error message only).
+            param:      The ``inspect.Parameter`` entry, or ``None`` if the hint
+                        key had no matching entry in the function signature.
+            owner_name: Human-readable name for error messages.
+
+        Raises:
+            LookupError: When the parameter is required (no default value, or
+                         missing from the signature entirely).
+
+        Edge cases:
+            - param is None (hint in annotations but not in signature) → raises.
+              This used to be silently swallowed by ``if param and ...``, which
+              short-circuits to False — the bug is fixed here by treating a missing
+              param as implicitly required.
+            - param has a default value → returns silently (caller skips it).
+        """
+        # DESIGN: treat a missing param as required rather than skipping it silently.
+        # A hint that exists without a matching signature entry indicates a bug
+        # in the callable itself — surfacing it early is preferable to a confusing
+        # AttributeError later.
+        no_default = param is None or param.default is inspect.Parameter.empty
+        if no_default:
+            raise LookupError(
+                f"Cannot resolve '{param_name}: {hint}'. "
+                f"Bind it or provide a default value."
+            )
+
+    def _iter_resolvable_params(
+        self,
+        fn: Callable[..., Any],
+    ) -> Iterator[tuple[str, Any, inspect.Parameter | None]]:
+        """Yield (param_name, hint, param) for every injectable parameter of *fn*.
+
+        Extracts type hints and signature in one place so both the sync and async
+        paths can share the same iteration and validation logic — only the resolver
+        call differs between the two paths.
+
+        Args:
+            fn:         The callable whose parameters are inspected.
+            owner_name: Human-readable name for error messages.
+
+        Yields:
+            A 3-tuple of (param_name, type_hint, inspect.Parameter | None).
+            ``param`` is None when the hint key has no matching signature entry —
+            callers must treat this as an unresolvable required parameter.
+
+        Edge cases:
+            - ``get_type_hints`` fails (e.g. forward ref can't resolve) → yields nothing.
+            - ``return`` annotation is present               → skipped silently.
+            - param exists in hints but not in signature     → yields param=None (caller raises).
+        """
+        try:
+            # _build_localns() supplies locally-defined classes (e.g. those created
+            # inside test functions) so PEP-563 string annotations can be evaluated.
+            hints = get_type_hints(
+                fn, include_extras=True, localns=self._build_localns()
+            )
+        except Exception:
+            # If hints can't be resolved at all, treat the function as having no
+            # injectable parameters — callers will fall back to defaults or raise.
+            hints = {}
+
+        hints.pop("return", None)
+        sig = inspect.signature(fn)
+
+        for param_name, hint in hints.items():
+            # param is None when the type hint exists but the signature doesn't
+            # have a matching entry — surface this to the caller so it can raise
+            # rather than silently dropping the parameter.
+            yield param_name, hint, sig.parameters.get(param_name)
 
     def _collect_dependencies(
         self,
@@ -1163,25 +1239,15 @@ class DIContainer:
         Example:
             bindings = self._collect_dependencies(MyService.__init__, qualifier="primary")
         """
-        try:
-            # _build_localns() supplies a cached dict of every registered
-            # interface/implementation so that locally-defined classes (e.g.
-            # classes defined inside test functions) are found when Python
-            # evaluates PEP-563 string annotations.  See _build_localns for
-            # the full rationale and caching strategy.
-            hints = get_type_hints(fn, include_extras=True, localns=self._build_localns())
-        except Exception:
-            hints = {}
-
-        hints.pop("return", None)
-        dependecies : list[AnyBinding] = []
-        
-        for _ , hint in hints.items():
-            resolved_dep = self._resolve_dependency(hint, qualifier= qualifier,priority=priority)
+        dependecies: list[AnyBinding] = []
+        for _, hint, _ in self._iter_resolvable_params(fn):
+            resolved_dep = self._resolve_dependency(
+                hint, qualifier=qualifier, priority=priority
+            )
             if resolved_dep is not None:
                 dependecies.append(resolved_dep)
         return dependecies
-    
+
     def _resolve_dependency(
         self,
         hint: Any,
@@ -1225,14 +1291,15 @@ class DIContainer:
         """
         if not _has_injectable_metadata(hint):
             return None
-        args        = get_args(hint)
-        base_type   = args[0]  
+        args = get_args(hint)
+        base_type = args[0]
         try:
-            return self._get_best_candidate(base_type,qualifier=qualifier,priority=priority)
+            return self._get_best_candidate(
+                base_type, qualifier=qualifier, priority=priority
+            )
         except LookupError:
             return None
 
-        
     def _resolve_hint_sync(self, hint: Any, param_name: str, owner_name: str) -> Any:
         """Resolve a single type hint to an instance, synchronously.
 
@@ -1253,13 +1320,15 @@ class DIContainer:
         Returns:
             The resolved instance, or :data:`_UNRESOLVED` if no binding matches.
         """
+        # NOTE: keep in sync with _resolve_hint_async — they differ only in
+        # aget/aget_all vs get/get_all. Any logic change must be mirrored here.
         if get_origin(hint) is Annotated:
-            args        = get_args(hint)
-            base_type   = args[0]
+            args = get_args(hint)
+            base_type = args[0]
             # Check LazyMeta first — a hint can't be both Lazy and Inject simultaneously.
             # Lazy wins because it wraps the resolution in a proxy; if it were treated as
             # a plain Inject, resolution would happen eagerly and break the deferral guarantee.
-            lazy_meta   = next((a for a in args[1:] if isinstance(a, LazyMeta)), None)
+            lazy_meta = next((a for a in args[1:] if isinstance(a, LazyMeta)), None)
             inject_meta = next((a for a in args[1:] if isinstance(a, InjectMeta)), None)
 
             if lazy_meta:
@@ -1273,11 +1342,19 @@ class DIContainer:
                     priority=lazy_meta.priority,
                 )
             elif inject_meta and inject_meta.all:
-                inner = get_args(base_type)[0] if get_origin(base_type) is list else base_type
+                inner = (
+                    get_args(base_type)[0]
+                    if get_origin(base_type) is list
+                    else base_type
+                )
                 return self.get_all(inner, qualifier=inject_meta.qualifier)
             elif inject_meta:
                 try:
-                    return self.get(base_type, qualifier=inject_meta.qualifier, priority=inject_meta.priority)
+                    return self.get(
+                        base_type,
+                        qualifier=inject_meta.qualifier,
+                        priority=inject_meta.priority,
+                    )
                 except LookupError:
                     # optional=True: swallow the error and inject None.
                     # optional=False (default): re-raise so the caller sees the real error.
@@ -1290,7 +1367,9 @@ class DIContainer:
 
         return _UNRESOLVED  # signal: no binding found, caller decides
 
-    async def _resolve_hint_async(self, hint: Any, param_name: str, owner_name: str) -> Any:
+    async def _resolve_hint_async(
+        self, hint: Any, param_name: str, owner_name: str
+    ) -> Any:
         """Resolve a single type hint to an instance, asynchronously.
 
         Async mirror of :meth:`_resolve_hint_sync`. Handles all four cases
@@ -1306,11 +1385,13 @@ class DIContainer:
         Returns:
             The resolved instance, or :data:`_UNRESOLVED` if no binding matches.
         """
+        # NOTE: keep in sync with _resolve_hint_sync — they differ only in
+        # aget/aget_all vs get/get_all. Any logic change must be mirrored here.
         if get_origin(hint) is Annotated:
-            args        = get_args(hint)
-            base_type   = args[0]
+            args = get_args(hint)
+            base_type = args[0]
             # Mirror of _resolve_hint_sync — LazyMeta checked first for the same reason.
-            lazy_meta   = next((a for a in args[1:] if isinstance(a, LazyMeta)), None)
+            lazy_meta = next((a for a in args[1:] if isinstance(a, LazyMeta)), None)
             inject_meta = next((a for a in args[1:] if isinstance(a, InjectMeta)), None)
 
             if lazy_meta:
@@ -1323,11 +1404,19 @@ class DIContainer:
                     priority=lazy_meta.priority,
                 )
             elif inject_meta and inject_meta.all:
-                inner = get_args(base_type)[0] if get_origin(base_type) is list else base_type
+                inner = (
+                    get_args(base_type)[0]
+                    if get_origin(base_type) is list
+                    else base_type
+                )
                 return await self.aget_all(inner, qualifier=inject_meta.qualifier)
             elif inject_meta:
                 try:
-                    return await self.aget(base_type, qualifier=inject_meta.qualifier, priority=inject_meta.priority)
+                    return await self.aget(
+                        base_type,
+                        qualifier=inject_meta.qualifier,
+                        priority=inject_meta.priority,
+                    )
                 except LookupError:
                     # Mirror of the sync path — optional=True swallows LookupError.
                     if inject_meta.optional:
@@ -1338,7 +1427,7 @@ class DIContainer:
             return await self.aget(hint)
 
         return _UNRESOLVED
-    
+
     def _resolve_constructor(self, cls: type) -> object:
         """Resolve ``cls.__init__`` parameters and return a new instance.
 
@@ -1356,10 +1445,10 @@ class DIContainer:
                 current resolution stack.
             LookupError: If any required ``__init__`` parameter cannot be resolved.
         """
-        self._check_cycle(cls)          # ✅ check before resolving
+        self._check_cycle(cls)  # ✅ check before resolving
 
         # Push cls onto the stack for the duration of this resolution
-        stack = _current_stack().copy() # copy — ContextVar is immutable
+        stack = _current_stack().copy()  # copy — ContextVar is immutable
         token = _resolution_stack.set(stack + [cls])
 
         try:
@@ -1368,7 +1457,6 @@ class DIContainer:
         finally:
             # Always pop — even if resolution fails
             _resolution_stack.reset(token)
-
 
     async def _resolve_constructor_async(self, cls: type) -> object:
         """Async mirror of :meth:`_resolve_constructor`.
@@ -1389,11 +1477,12 @@ class DIContainer:
         token = _resolution_stack.set(stack + [cls])
 
         try:
-            resolved_kwargs = await self._collect_kwargs_async(cls.__init__, cls.__name__)
+            resolved_kwargs = await self._collect_kwargs_async(
+                cls.__init__, cls.__name__
+            )
             return cls(**resolved_kwargs)
         finally:
             _resolution_stack.reset(token)
-
 
     def _call_provider(self, fn: Callable[..., Any]) -> Any:
         """Call a sync provider function with all dependencies injected.
@@ -1428,7 +1517,6 @@ class DIContainer:
             if token is not None:
                 _resolution_stack.reset(token)
 
-
     async def _call_provider_async(self, fn: Callable[..., Any]) -> Any:
         """Call a provider function (sync or async) with all dependencies injected.
 
@@ -1462,7 +1550,6 @@ class DIContainer:
         finally:
             if token is not None:
                 _resolution_stack.reset(token)
-
 
     # ── Helpers ───────────────────────────────────────────────────────
 
@@ -1574,7 +1661,11 @@ class DIContainer:
         # @Provider-decorated methods. vars() gives the raw unbound functions,
         # which carry ProviderMetadata directly on their __dict__.
         for name, fn in vars(module_cls).items():
-            if callable(fn) and name != "__init__" and _get_provider_metadata(fn) is not None:
+            if (
+                callable(fn)
+                and name != "__init__"
+                and _get_provider_metadata(fn) is not None
+            ):
                 # getattr returns a bound method — self is the live module instance.
                 # ProviderBinding handles bound methods via the _get_provider_metadata fix.
                 self.provide(getattr(instance, name))
@@ -1608,7 +1699,11 @@ class DIContainer:
         instance = await self._resolve_constructor_async(module_cls)
 
         for name, fn in vars(module_cls).items():
-            if callable(fn) and name != "__init__" and _get_provider_metadata(fn) is not None:
+            if (
+                callable(fn)
+                and name != "__init__"
+                and _get_provider_metadata(fn) is not None
+            ):
                 self.provide(getattr(instance, name))
 
     def _run_post_construct_sync(
@@ -1634,7 +1729,7 @@ class DIContainer:
         """
         if hook is None:
             return
-        
+
         if hook.is_async:
             raise RuntimeError(
                 f"@PostConstruct method '{hook.fn_name}' is async — "
@@ -1666,9 +1761,10 @@ class DIContainer:
 
         bound = getattr(instance, hook.fn_name)
         if hook.is_async:
-            await bound()       # async @PostConstruct
+            await bound()  # async @PostConstruct
         else:
-            bound()             # sync @PostConstruct — still fine in async context
+            bound()  # sync @PostConstruct — still fine in async context
+
     # ── Shutdown ──────────────────────────────────────────────────
     def shutdown(self) -> None:
         """
@@ -1679,15 +1775,15 @@ class DIContainer:
         """
         for binding in self._bindings:
             if not isinstance(binding, ClassBinding):
-                continue                            # providers have no lifecycle hooks
+                continue  # providers have no lifecycle hooks
             if binding.pre_destroy is None:
-                continue                            # no @PreDestroy — skip
+                continue  # no @PreDestroy — skip
 
             key = binding.implementation
             instance = self._singleton_cache.get(key)
 
             if instance is None:
-                continue                            # never instantiated — skip
+                continue  # never instantiated — skip
 
             if binding.pre_destroy.is_async:
                 raise RuntimeError(
@@ -1726,9 +1822,9 @@ class DIContainer:
 
             bound = getattr(instance, binding.pre_destroy.fn_name)
             if binding.pre_destroy.is_async:
-                await bound()   # async @PreDestroy
+                await bound()  # async @PreDestroy
             else:
-                bound()         # sync @PreDestroy — fine in async context
+                bound()  # sync @PreDestroy — fine in async context
 
         self._clear_caches()
 
@@ -1779,14 +1875,19 @@ class DIContainer:
             base_type = get_args(hint)[0] if get_origin(hint) is Annotated else hint
             if not isinstance(base_type, type):
                 continue
-            dep_bindings = self._filter(base_type, qualifier=qualifier, priority=priority)
+            dep_bindings = self._filter(
+                base_type, qualifier=qualifier, priority=priority
+            )
             for dep in dep_bindings:
-                if _is_scope_leak(parent_scope=binding.scope,dep_scope=dep.scope):
-                    leaks.append(ScopeLeak(
-                        binding=(binding.implementation, binding.scope),
-                        reference=(dep.interface, dep.scope),
-                    ))
+                if _is_scope_leak(parent_scope=binding.scope, dep_scope=dep.scope):
+                    leaks.append(
+                        ScopeLeak(
+                            binding=(binding.implementation, binding.scope),
+                            reference=(dep.interface, dep.scope),
+                        )
+                    )
         return leaks
+
     # ── Validate ──────────────────────────────────────────────────
     def validate_bindings(self) -> None:
         """Validate all registered bindings against the full registry.
@@ -1890,13 +1991,12 @@ class DIContainer:
         # This silently breaks cycles for raw recursive callers (e.g. graph analysis
         # tools) that don't need the sentinel and just want to avoid infinite loops.
         return [d for d in deps if d.interface not in _visited]
-    
 
     def describe(self) -> DIContainerDescriptor:
         bindings_descriptor = tuple([b.describe(self) for b in self._bindings])
-        return DIContainerDescriptor(validated=self._validated,bindings=bindings_descriptor)
+        return DIContainerDescriptor(
+            validated=self._validated, bindings=bindings_descriptor
+        )
 
     def __repr__(self) -> str:
         return f"DIContainer({self._bindings})"
-
-

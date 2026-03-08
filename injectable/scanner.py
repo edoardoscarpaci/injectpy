@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from .binding import ClassBinding, ProviderBinding
 from .metadata import _has_own_metadata, _has_provider_metadata
+
 LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -61,7 +62,7 @@ class DefaultContainerScanner(ContainerScanner):
                 that discovered bindings will be registered into.
         """
         self._container = container
-    
+
     # ── Public API ────────────────────────────────────────────────
 
     def scan(self, module: str | ModuleType, *, recursive: bool = False) -> None:
@@ -139,7 +140,10 @@ class DefaultContainerScanner(ContainerScanner):
                 submodule = importlib.import_module(module_info.name)
                 self._scan_module(submodule)
             except ImportError as e:
-                LOGGER.warning(f"[DIContainer] Warning: could not import '{module_info.name}': {e}")
+                LOGGER.warning(
+                    f"[DIContainer] Warning: could not import '{module_info.name}': {e}"
+                )
+
     def _autoregister_class(self, cls: type) -> None:
         """Register a DI-annotated class into the container, skipping duplicates.
 
@@ -155,7 +159,9 @@ class DefaultContainerScanner(ContainerScanner):
         bindings = self._container._bindings
 
         # Guard against scanning the same module twice
-        if any(isinstance(b, ClassBinding) and b.implementation is cls for b in bindings):
+        if any(
+            isinstance(b, ClassBinding) and b.implementation is cls for b in bindings
+        ):
             return
 
         interfaces = self._find_interfaces(cls)
@@ -198,8 +204,7 @@ class DefaultContainerScanner(ContainerScanner):
             implements no abstract bases.
         """
         return [
-            base for base in cls.__mro__[1:]
-            if base is not object
-            and inspect.isclass(base)
-            and inspect.isabstract(base)
+            base
+            for base in cls.__mro__[1:]
+            if base is not object and inspect.isclass(base) and inspect.isabstract(base)
         ]

@@ -10,7 +10,7 @@ from typing import (
     TypeVar,
     overload,
     get_origin,
-    get_args
+    get_args,
 )
 
 # TYPE_CHECKING guard — DIContainer is only imported for the type checker.
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .container import DIContainer
 
 T = TypeVar("T")
+
 
 class _Injectable:
     """
@@ -43,6 +44,7 @@ class _Injectable:
 
     __slots__ = ()  # Lightweight — subclasses define their own fields
 
+
 @dataclass
 class InjectMeta(_Injectable):
     """Marker placed inside Annotated[T, InjectMeta(...)] by the Inject alias.
@@ -59,12 +61,14 @@ class InjectMeta(_Injectable):
                    if no binding is found. Ignored when all=True since an
                    empty list already signals "nothing found".
     """
+
     qualifier: str | None = None
-    priority:  int | None = None
-    all:       bool       = False
+    priority: int | None = None
+    all: bool = False
     # DESIGN: optional=False by default — fail-fast is safer than silently
     # injecting None. Callers must explicitly opt in to optional injection.
-    optional:  bool       = False
+    optional: bool = False
+
 
 # ─────────────────────────────────────────────────────────────────
 #  Type aliases — sugar over Annotated[T, Inject(...)]
@@ -78,30 +82,49 @@ class _InjectedAlias:
     """
 
     @overload
-    def __getitem__(self, tp: type[T]) -> type[T]: ...          # Injected[T] → type[T] for checker
+    def __getitem__(
+        self, tp: type[T]
+    ) -> type[T]: ...  # Injected[T] → type[T] for checker
 
     @overload
-    def __getitem__(self, tp: Any) -> Any: ...                  # fallback for complex types
+    def __getitem__(self, tp: Any) -> Any: ...  # fallback for complex types
 
-    def __getitem__(self, tp: Any) -> Any:                      # ✅ Any — Annotated can't satisfy type[T]
+    def __getitem__(self, tp: Any) -> Any:  # ✅ Any — Annotated can't satisfy type[T]
         return Annotated[tp, InjectMeta()]
 
     @overload
-    def __call__(self, tp: type[T], *, qualifier: str | None = ..., priority: int | None = ..., optional: bool = ...) -> type[T]: ...
+    def __call__(
+        self,
+        tp: type[T],
+        *,
+        qualifier: str | None = ...,
+        priority: int | None = ...,
+        optional: bool = ...,
+    ) -> type[T]: ...
     @overload
-    def __call__(self, tp: Any, *, qualifier: str | None = ..., priority: int | None = ..., optional: bool = ...) -> Any: ...
+    def __call__(
+        self,
+        tp: Any,
+        *,
+        qualifier: str | None = ...,
+        priority: int | None = ...,
+        optional: bool = ...,
+    ) -> Any: ...
     def __call__(
         self,
         tp: Any,
         *,
         qualifier: str | None = None,
-        priority:  int | None = None,
+        priority: int | None = None,
         # optional=True: return None instead of raising LookupError when the
         # binding is absent. Useful for truly optional collaborators (e.g. a
         # metrics reporter that may not be wired in all environments).
-        optional:  bool       = False,
+        optional: bool = False,
     ) -> Any:
-        return Annotated[tp, InjectMeta(qualifier=qualifier, priority=priority, optional=optional)]
+        return Annotated[
+            tp, InjectMeta(qualifier=qualifier, priority=priority, optional=optional)
+        ]
+
 
 class _InjectedInstancesAlias:
     """
@@ -109,19 +132,26 @@ class _InjectedInstancesAlias:
         InjectInstances[NotificationService]              ← subscript
         InjectInstances(NotificationService, qualifier=X) ← call with options
     """
+
     @overload
-    def __getitem__(self, tp: type[T]) -> Type[list[T]]: ...    # InjectedInstances[T] → list[T] for checker
+    def __getitem__(
+        self, tp: type[T]
+    ) -> Type[list[T]]: ...  # InjectedInstances[T] → list[T] for checker
     @overload
-    def __getitem__(self, tp: Any) -> Any: ...                  # fallback
-    def __getitem__(self, tp: Any) -> Any:                      # Any — Annotated[list[T], ...] != Type[list[T]]
+    def __getitem__(self, tp: Any) -> Any: ...  # fallback
+    def __getitem__(
+        self, tp: Any
+    ) -> Any:  # Any — Annotated[list[T], ...] != Type[list[T]]
         return Annotated[list[tp], InjectMeta(all=True)]
 
     @overload
-    def __call__(self, tp: type[T], *, qualifier: str | None = ...) -> Type[list[T]]: ...
+    def __call__(
+        self, tp: type[T], *, qualifier: str | None = ...
+    ) -> Type[list[T]]: ...
     @overload
     def __call__(self, tp: Any, *, qualifier: str | None = ...) -> Any: ...
 
-    def __call__(                                               # Any on implementation
+    def __call__(  # Any on implementation
         self,
         tp: Any,
         *,
@@ -152,6 +182,7 @@ InjectInstances = _InjectedInstancesAlias()
 #  a circular import. DIContainer is only referenced via TYPE_CHECKING.
 # ─────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class LazyMeta(_Injectable):
     """Marker placed inside Annotated[T, LazyMeta(...)] by the Lazy alias.
@@ -163,8 +194,9 @@ class LazyMeta(_Injectable):
         qualifier: Optional named qualifier forwarded to container.get().
         priority:  Optional priority forwarded to container.get().
     """
+
     qualifier: str | None = None
-    priority:  int | None = None
+    priority: int | None = None
 
 
 class LazyProxy(Generic[T]):
@@ -214,13 +246,13 @@ class LazyProxy(Generic[T]):
         # DIContainer is only used via self._container.get() / .aget() — both are
         # public methods with stable signatures, so the Any cast is safe here.
         self._container: Any = container
-        self._tp         = tp
-        self._qualifier  = qualifier
-        self._priority   = priority
+        self._tp = tp
+        self._qualifier = qualifier
+        self._priority = priority
         # _instance is None until first resolution — not the same as a None binding.
         # _resolved tracks whether resolution has occurred, since None is a valid result.
         self._instance: T | None = None
-        self._resolved:  bool    = False
+        self._resolved: bool = False
 
     def get(self) -> T:
         """Resolve and return the wrapped instance synchronously.
@@ -306,6 +338,7 @@ class _LazyAlias:
 # _LazyAlias directly. This keeps the usage surface minimal and consistent.
 Lazy = _LazyAlias()
 
+
 def _has_injectable_metadata(hint: Any) -> bool:
     """
     Return True if a type hint contains any _Injectable metadata in its Annotated args.
@@ -340,8 +373,9 @@ def _has_injectable_metadata(hint: Any) -> bool:
     """
     return _get_injectable_metadata(hint) is not None
 
+
 def _get_injectable_metadata(hint: Any) -> _Injectable | None:
     if get_origin(hint) is Annotated:
-        args        = get_args(hint)
+        args = get_args(hint)
         return next((a for a in args[1:] if isinstance(a, _Injectable)), None)
     return None

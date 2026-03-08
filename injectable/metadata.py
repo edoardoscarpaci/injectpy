@@ -1,9 +1,11 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TypeVar, Type,Any
+from typing import TypeVar, Type, Any
 
 T = TypeVar("T")
+
+
 class Scope(Enum):
     """
     Lifecycle scopes for DI-managed components.
@@ -14,25 +16,38 @@ class Scope(Enum):
     REQUEST:      One instance per active request → @RequestScoped
     SESSION:      One instance per active session → @SessionScoped
     """
-    DEPENDENT = auto()   # default — new instance each time
-    SINGLETON = auto()   # one instance ever
-    REQUEST   = auto()   # one instance per request context
-    SESSION   = auto()   # one instance per session context
+
+    DEPENDENT = auto()  # default — new instance each time
+    SINGLETON = auto()  # one instance ever
+    REQUEST = auto()  # one instance per request context
+    SESSION = auto()  # one instance per session context
 
     def scope_rank(self) -> int:
         """Helper method to get scope rank for comparison."""
         return _scope_rank(self)
-    
-_SCOPE_RANK = {Scope.SINGLETON: 1, Scope.SESSION: 2, Scope.REQUEST: 3, Scope.DEPENDENT: 4}
+
+
+_SCOPE_RANK = {
+    Scope.SINGLETON: 1,
+    Scope.SESSION: 2,
+    Scope.REQUEST: 3,
+    Scope.DEPENDENT: 4,
+}
+
+
 def _scope_rank(scope: Scope) -> int:
     return _SCOPE_RANK[scope]
+
+
 @dataclass(frozen=True)
 class ScopeLeak:
-    binding : tuple[Type,Scope]
-    reference : tuple[Type,Scope]
+    binding: tuple[Type, Scope]
+    reference: tuple[Type, Scope]
 
-_DI_METADATA_ATTR    = "__di_metadata__"    # storage slot only — not a semantic key
-_DI_PROVIDER_ATTR    = "__di_provider__"    # storage slot only
+
+_DI_METADATA_ATTR = "__di_metadata__"  # storage slot only — not a semantic key
+_DI_PROVIDER_ATTR = "__di_provider__"  # storage slot only
+
 
 class DIMetadata:
     """
@@ -49,23 +64,23 @@ class DIMetadata:
 
     def __init__(
         self,
-        scope:     Scope,
+        scope: Scope,
         qualifier: str | None = None,
-        priority:  int = 0,
+        priority: int = 0,
         inherited: bool = False,
     ) -> None:
-        self.scope     = scope
+        self.scope = scope
         self.qualifier = qualifier
-        self.priority  = priority
+        self.priority = priority
         self.inherited = inherited
 
     def merge(self, **updates: Any) -> DIMetadata:
         """Immutable merge — returns new instance with updated fields."""
         return DIMetadata(
-            scope     = updates.get("scope",     self.scope),
-            qualifier = updates.get("qualifier", self.qualifier),
-            priority  = updates.get("priority",  self.priority),
-            inherited = updates.get("inherited", self.inherited),
+            scope=updates.get("scope", self.scope),
+            qualifier=updates.get("qualifier", self.qualifier),
+            priority=updates.get("priority", self.priority),
+            inherited=updates.get("inherited", self.inherited),
         )
 
     def __repr__(self) -> str:
@@ -87,6 +102,7 @@ class DIMetadata:
         """Factory method for default metadata values."""
         return cls(scope=Scope.DEPENDENT, qualifier=None, priority=0, inherited=False)
 
+
 class ProviderMetadata:
     """
     Holds all DI metadata for a @Provider function.
@@ -98,21 +114,21 @@ class ProviderMetadata:
     def __init__(
         self,
         qualifier: str | None = None,
-        priority:  int = 0,
+        priority: int = 0,
         singleton: bool = False,
-        is_async:  bool = False,
+        is_async: bool = False,
     ) -> None:
         self.qualifier = qualifier
-        self.priority  = priority
+        self.priority = priority
         self.singleton = singleton
-        self.is_async  = is_async
+        self.is_async = is_async
 
     def merge(self, **updates: Any) -> ProviderMetadata:
         return ProviderMetadata(
-            qualifier = updates.get("qualifier", self.qualifier),
-            priority  = updates.get("priority",  self.priority),
-            singleton = updates.get("singleton", self.singleton),
-            is_async  = updates.get("is_async",  self.is_async),
+            qualifier=updates.get("qualifier", self.qualifier),
+            priority=updates.get("priority", self.priority),
+            singleton=updates.get("singleton", self.singleton),
+            is_async=updates.get("is_async", self.is_async),
         )
 
     def __repr__(self) -> str:
@@ -127,16 +143,18 @@ class ProviderMetadata:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         for key, val in state.items():
-            object.__setattr__(self, key, val)\
-            
+            object.__setattr__(self, key, val)
+
     @classmethod
     def default(cls) -> ProviderMetadata:
         """Factory method for default metadata values."""
         return cls(qualifier=None, priority=0, singleton=False, is_async=False)
 
+
 # ─────────────────────────────────────────────────────────────────
 #  Accessors — all go through these, never raw __dict__ access
 # ─────────────────────────────────────────────────────────────────
+
 
 def _get_own_metadata(cls: type) -> DIMetadata | None:
     """
@@ -149,10 +167,12 @@ def _get_own_metadata(cls: type) -> DIMetadata | None:
     # ✅ isinstance — type is the signal, not the attribute name
     return val if isinstance(val, DIMetadata) else None
 
+
 def _has_own_metadata(cls: type) -> bool:
     """Checks if a class has its own
     DIMetadata without walking MRO."""
     return _get_own_metadata(cls) is not None
+
 
 def _get_metadata(cls: type) -> DIMetadata | None:
     """
@@ -172,9 +192,11 @@ def _get_metadata(cls: type) -> DIMetadata | None:
 
     return None
 
+
 def _has_metadata(cls: type) -> bool:
     """Checks if a class or its parents (if inherited=True) have DIMetadata."""
     return _get_metadata(cls) is not None
+
 
 def _set_metadata(cls: type, meta: DIMetadata) -> None:
     """
@@ -183,7 +205,7 @@ def _set_metadata(cls: type, meta: DIMetadata) -> None:
     """
     # type: ignore needed — __dict__ is a mappingproxy on classes
     # vars() gives us the actual dict for writing
-    setattr(cls, _DI_METADATA_ATTR, meta)   # type: ignore[index]
+    setattr(cls, _DI_METADATA_ATTR, meta)  # type: ignore[index]
 
 
 def _get_provider_metadata(fn: Any) -> ProviderMetadata | None:
@@ -216,9 +238,11 @@ def _get_provider_metadata(fn: Any) -> ProviderMetadata | None:
 
     return val if isinstance(val, ProviderMetadata) else None
 
+
 def _has_provider_metadata(fn: Any) -> bool:
     """Checks if a function has ProviderMetadata."""
     return _get_provider_metadata(fn) is not None
+
 
 def _set_provider_metadata(fn: Any, meta: ProviderMetadata) -> None:
     """Stamps ProviderMetadata onto a provider function."""
@@ -235,6 +259,7 @@ def _is_decorated(obj: Any) -> bool:
     if callable(obj):
         return _get_provider_metadata(obj) is not None
     return False
+
 
 def _is_scope_leak(parent_scope: Scope, dep_scope: Scope) -> bool:
     """

@@ -5,20 +5,11 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Protocol,
     TypeAlias,
-    TypeVar,
     get_type_hints,
-    runtime_checkable,
 )
-from dataclasses import (
-    field,
-    dataclass
-)
-from abc import (
-    ABC,
-    abstractmethod
-)
+from dataclasses import field, dataclass
+from abc import ABC, abstractmethod
 
 from .decorator.lifecycle import _find_post_construct, _find_pre_destroy
 from .exceptions import (
@@ -32,12 +23,12 @@ from .metadata import (
     Scope,
     _get_metadata,
     _get_provider_metadata,
-    _is_scope_leak
+    _is_scope_leak,
 )
-
 
 if TYPE_CHECKING:
     from .container import DIContainer
+
 
 @dataclass
 class BindingDescriptor:
@@ -72,13 +63,13 @@ class BindingDescriptor:
         d = descriptor.to_dict()    # → plain dict for JSON/YAML
     """
 
-    interface:      str
+    interface: str
     implementation: str
-    scope:          Scope
-    qualifier:      str | None                    = None
-    priority :      int | None                    = None 
-    dependencies:   tuple[BindingDescriptor, ...] = field(default_factory=tuple)
-    
+    scope: Scope
+    qualifier: str | None = None
+    priority: int | None = None
+    dependencies: tuple[BindingDescriptor, ...] = field(default_factory=tuple)
+
     @property
     def scope_leak(self) -> bool:
         """
@@ -96,7 +87,7 @@ class BindingDescriptor:
             - Equal scopes    → False (not a leak).
         """
         # Compare each direct dep's scope against this binding's scope
-        return any(_is_scope_leak(self.scope,dep.scope) for dep in self.dependencies)
+        return any(_is_scope_leak(self.scope, dep.scope) for dep in self.dependencies)
 
     # ── ASCII rendering ───────────────────────────────────────────────────────
 
@@ -147,7 +138,8 @@ class BindingDescriptor:
         priority_str = f"Priority({self.priority})" if self.priority else ""
         leak_flag = (
             "  ⚠️  SCOPE LEAK"
-            if parent_scope is not None and _is_scope_leak(parent_scope=parent_scope,dep_scope=self.scope)
+            if parent_scope is not None
+            and _is_scope_leak(parent_scope=parent_scope, dep_scope=self.scope)
             else ""
         )
         label = (
@@ -189,14 +181,16 @@ class BindingDescriptor:
             print(json.dumps(descriptor.to_dict(), indent=2))
         """
         return {
-            "interface":      self.interface,
+            "interface": self.interface,
             "implementation": self.implementation,
-            "scope":          self.scope.name,
-            "qualifier":      self.qualifier,
-            "scope_leak":     self.scope_leak,
-            "priority":       self.priority,
-            "dependencies":   [d.to_dict() for d in self.dependencies],
+            "scope": self.scope.name,
+            "qualifier": self.qualifier,
+            "scope_leak": self.scope_leak,
+            "priority": self.priority,
+            "dependencies": [d.to_dict() for d in self.dependencies],
         }
+
+
 class Binding(ABC):
     """
     Abstract base for all binding types in the DI container.
@@ -261,6 +255,7 @@ class Binding(ABC):
         """
         pass
 
+
 class ClassBinding(Binding):
     """Binding that instantiates a concrete class via constructor injection.
 
@@ -303,20 +298,22 @@ class ClassBinding(Binding):
                 ``@Singleton``.
         """
         if not issubclass(implementation, interface):
-            raise TypeError(f"{implementation.__name__} must be a subclass of {interface.__name__}")
+            raise TypeError(
+                f"{implementation.__name__} must be a subclass of {interface.__name__}"
+            )
 
-        self.interface      = interface
+        self.interface = interface
         self.implementation = implementation
 
         meta: DIMetadata | None = _get_metadata(implementation)
         if meta is None:
             raise ClassBindingNotDecoratedError(implementation)
 
-        self.scope          = meta.scope
-        self.qualifier      = meta.qualifier
-        self.priority       = meta.priority
+        self.scope = meta.scope
+        self.qualifier = meta.qualifier
+        self.priority = meta.priority
         self.post_construct = _find_post_construct(implementation)
-        self.pre_destroy    = _find_pre_destroy(implementation)
+        self.pre_destroy = _find_pre_destroy(implementation)
 
     def __repr__(self) -> str:
         qualifier_part = f", qualifier={self.qualifier!r}" if self.qualifier else ""
@@ -394,8 +391,10 @@ class ClassBinding(Binding):
         instance = await container._resolve_constructor_async(self.implementation)
         await container._run_post_construct_async(instance, self.post_construct)
         return instance
-    
-    def describe(self, container, _visited: frozenset[type] | None = None) -> BindingDescriptor:
+
+    def describe(
+        self, container, _visited: frozenset[type] | None = None
+    ) -> BindingDescriptor:
         """
         Build a full recursive ``BindingDescriptor`` for this binding.
 
@@ -445,6 +444,7 @@ class ClassBinding(Binding):
             qualifier=self.qualifier,
             dependencies=tuple(dep_descriptors),
         )
+
 
 class ProviderBinding(Binding):
     """Binding that delegates instance creation to a plain function (factory).
@@ -523,10 +523,12 @@ class ProviderBinding(Binding):
                 interface = ret  # None or unexpected — TypeError raised below
 
         if interface is None:
-            raise TypeError(f"Provider '{fn.__name__}' must declare a return type hint.")
+            raise TypeError(
+                f"Provider '{fn.__name__}' must declare a return type hint."
+            )
 
         self.interface = interface
-        self.fn        = fn
+        self.fn = fn
 
         # Detect async at registration time — avoids repeated inspect calls
         # on every resolution. iscoroutinefunction is cheap but registrations
@@ -536,13 +538,13 @@ class ProviderBinding(Binding):
         # DESIGN: only SINGLETON and DEPENDENT are available to providers.
         # REQUEST / SESSION require an active scope context that providers
         # cannot participate in — they are stateless factory functions.
-        self.scope     = Scope.SINGLETON if meta.singleton else Scope.DEPENDENT
+        self.scope = Scope.SINGLETON if meta.singleton else Scope.DEPENDENT
         self.qualifier = meta.qualifier
-        self.priority  = meta.priority
+        self.priority = meta.priority
 
     def __repr__(self) -> str:
         qualifier_part = f", qualifier={self.qualifier!r}" if self.qualifier else ""
-        async_part     = ", async" if self.is_async else ""
+        async_part = ", async" if self.is_async else ""
         return (
             f"ProviderBinding("
             f"{self.interface.__name__} ← {self.fn.__name__}, "
@@ -550,7 +552,7 @@ class ProviderBinding(Binding):
             f"{qualifier_part}"
             f"{async_part})"
         )
-    
+
     def validate(self, container: DIContainer) -> None:
         """No-op — provider bindings have no scope-leak semantics to check.
 
@@ -605,7 +607,7 @@ class ProviderBinding(Binding):
             LookupError: If any required parameter of :attr:`fn` has no binding.
         """
         return await container._call_provider_async(self.fn)
-    
+
     def describe(
         self,
         container: DIContainer,
