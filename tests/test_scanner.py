@@ -28,8 +28,8 @@ from abc import ABC, abstractmethod
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, Provider, Singleton
+from providify.container import DIContainer
+from providify.decorator.scope import Component, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ class _ProviderWidget:
 
 def _fresh_module_name() -> str:
     """Return a unique module name that cannot collide with real modules."""
-    return f"_injectpy_test_{uuid.uuid4().hex}"
+    return f"_providify_test_{uuid.uuid4().hex}"
 
 
 def _add(mod: types.ModuleType, obj: object) -> object:
@@ -287,7 +287,7 @@ class TestScanIdempotency:
         container.scan(fake_mod)
         container.scan(fake_mod)
 
-        from injectpy.binding import ProviderBinding
+        from providify.binding import ProviderBinding
 
         matching = [
             b
@@ -398,7 +398,7 @@ class TestScanErrorPaths:
     ) -> None:
         """scan('no.such.module') must raise ModuleNotFoundError."""
         with pytest.raises(ModuleNotFoundError):
-            container.scan("no_such_module_xyzzy_injectpy_test")
+            container.scan("no_such_module_xyzzy_providify_test")
 
     def test_container_scan_delegates_to_scanner(
         self, container: DIContainer, fake_mod: types.ModuleType

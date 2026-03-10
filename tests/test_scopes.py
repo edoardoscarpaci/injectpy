@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, RequestScoped, SessionScoped, Singleton
-from injectpy.exceptions import ScopeViolationDetectedError
+from providify.container import DIContainer
+from providify.decorator.scope import Component, RequestScoped, SessionScoped, Singleton
+from providify.exceptions import ScopeViolationDetectedError
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ class TestSingletonScope:
 
     def test_singleton_provider_caches_result(self, container: DIContainer) -> None:
         """@Provider(singleton=True) must cache its return value across calls."""
-        from injectpy.decorator.scope import Provider
+        from providify.decorator.scope import Provider
 
         call_count = 0
 
@@ -108,7 +108,7 @@ class TestDependentScope:
         self, container: DIContainer
     ) -> None:
         """@Provider(singleton=False) must invoke the factory on every resolution."""
-        from injectpy.decorator.scope import Provider
+        from providify.decorator.scope import Provider
 
         call_count = 0
 

@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component
-from injectpy.type import Inject, InjectInstances
+from providify.container import DIContainer
+from providify.decorator.scope import Component
+from providify.type import Inject, InjectInstances
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the injectpy test suite.
+"""Shared pytest fixtures for the providify test suite.
 
 Every test module imports from this file automatically (pytest discovers it).
 The two fixtures here handle the two isolation concerns:
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
+from providify.container import DIContainer
 
 
 @pytest.fixture

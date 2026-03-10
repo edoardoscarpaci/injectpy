@@ -1,4 +1,4 @@
-# injectpy
+# providify
 
 A Python dependency injection container inspired by Jakarta CDI and Spring.
 Supports sync and async resolution, multiple scopes, lifecycle hooks, and configuration modules.
@@ -18,7 +18,7 @@ Requires Python 3.12+.
 ## Quick start
 
 ```python
-from injectpy import DIContainer, Component, Singleton
+from providify import DIContainer, Component, Singleton
 
 class Notifier:
     def send(self, msg: str) -> None: ...
@@ -63,7 +63,7 @@ No annotation is needed for plain type hints — the container inspects `__init_
 Mark a class so the container knows how to manage its lifetime.
 
 ```python
-from injectpy import Component, Singleton, RequestScoped, SessionScoped
+from providify import Component, Singleton, RequestScoped, SessionScoped
 
 @Component        # new instance on every resolution (default)
 class EmailSender: ...
@@ -98,7 +98,7 @@ class PrimaryDB(Database): ...
 Register a factory function instead of a class. The return type determines the resolved interface.
 
 ```python
-from injectpy import Provider
+from providify import Provider
 
 @Provider
 def make_sender() -> EmailSender:
@@ -124,7 +124,7 @@ Providers also accept `qualifier=` and `priority=`.
 ## Container API
 
 ```python
-from injectpy import DIContainer
+from providify import DIContainer
 
 container = DIContainer()
 
@@ -188,7 +188,7 @@ class OrderService:
 Use `Inject[T]` when you need a qualifier, exact priority, or optional injection.
 
 ```python
-from injectpy import Inject
+from providify import Inject
 
 @Component
 class ReportService:
@@ -206,7 +206,7 @@ class ReportService:
 Inject every registered implementation of an interface, sorted by priority.
 
 ```python
-from injectpy import InjectInstances
+from providify import InjectInstances
 
 @Component
 class NotificationFanout:
@@ -228,7 +228,7 @@ Wraps the dependency in a `LazyProxy`. The real instance is not resolved until
    re-resolve on every `.get()` call instead of caching a stale request instance
 
 ```python
-from injectpy import Lazy
+from providify import Lazy
 
 @Singleton
 class ReportService:
@@ -290,7 +290,7 @@ Called by the container immediately after the instance is constructed and all
 dependencies are injected. Both sync and async forms are supported.
 
 ```python
-from injectpy import PostConstruct
+from providify import PostConstruct
 
 @Singleton
 class SearchIndex:
@@ -310,7 +310,7 @@ Called during `shutdown()` / `ashutdown()` for every **cached singleton** instan
 DEPENDENT instances are not owned by the container and are never destroyed this way.
 
 ```python
-from injectpy import PreDestroy
+from providify import PreDestroy
 
 @Singleton
 class ConnectionPool:
@@ -343,8 +343,8 @@ Group related `@Provider` methods in a single class.
 so providers can share config or other injected collaborators via `self`.
 
 ```python
-from injectpy import Configuration
-from injectpy.decorator.scope import Provider, Singleton
+from providify import Configuration
+from providify.decorator.scope import Provider, Singleton
 
 @Singleton
 class AppConfig:
@@ -381,7 +381,7 @@ Qualifiers and priorities can be applied inline via the scope decorator or as
 separate `@Named` / `@Priority` modifiers on top of any scope decorator.
 
 ```python
-from injectpy import Named, Priority
+from providify import Named, Priority
 
 # Inline form — shorter, good for simple cases
 @Singleton(qualifier="primary", priority=1)

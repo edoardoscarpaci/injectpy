@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.binding import ClassBinding, ProviderBinding
-from injectpy.decorator.scope import Component, Provider, Singleton
-from injectpy.exceptions import (
+from providify.binding import ClassBinding, ProviderBinding
+from providify.decorator.scope import Component, Provider, Singleton
+from providify.exceptions import (
     ClassBindingNotDecoratedError,
     ProviderBindingNotDecoratedError,
 )
-from injectpy.metadata import Scope
+from providify.metadata import Scope
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.lifecycle import PostConstruct, PreDestroy
-from injectpy.decorator.scope import Component, Singleton
+from providify.container import DIContainer
+from providify.decorator.lifecycle import PostConstruct, PreDestroy
+from providify.decorator.scope import Component, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────

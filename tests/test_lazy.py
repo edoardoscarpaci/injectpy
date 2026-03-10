@@ -14,9 +14,9 @@ Covered:
 from __future__ import annotations
 
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, Singleton
-from injectpy.type import Lazy, LazyProxy
+from providify.container import DIContainer
+from providify.decorator.scope import Component, Singleton
+from providify.type import Lazy, LazyProxy
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -25,10 +25,10 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, Singleton
-from injectpy.exceptions import CircularDependencyError
-from injectpy.type import Lazy
+from providify.container import DIContainer
+from providify.decorator.scope import Component, Singleton
+from providify.exceptions import CircularDependencyError
+from providify.type import Lazy
 
 
 # ─────────────────────────────────────────────────────────────────

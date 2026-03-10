@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer, DIContainerDescriptor
-from injectpy.decorator.scope import Component, Provider, Singleton
-from injectpy.binding import BindingDescriptor
-from injectpy.metadata import Scope
+from providify.container import DIContainer, DIContainerDescriptor
+from providify.decorator.scope import Component, Provider, Singleton
+from providify.binding import BindingDescriptor
+from providify.metadata import Scope
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -305,7 +305,7 @@ class TestGlobalContainer:
 
         @Singleton
         class Resource:
-            from injectpy.decorator.lifecycle import PreDestroy as _PreDestroy
+            from providify.decorator.lifecycle import PreDestroy as _PreDestroy
 
             @_PreDestroy
             def teardown(self) -> None:
@@ -361,7 +361,7 @@ class TestAcurrent:
 
 
 class TestProviderWithDeps:
-    """Verify that @Provider functions can declare injectpy parameters."""
+    """Verify that @Provider functions can declare providify parameters."""
 
     def test_provider_receives_injected_dep(self, container: DIContainer) -> None:
         """A @Provider function with a typed parameter must receive the resolved dep.

@@ -22,13 +22,13 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-class _injectpy:
+class _providify:
     """
     Marker base class for all injection metadata types in this library.
 
     Subclass this to tag a dataclass as recognized injection metadata
     (e.g. InjectMeta, LazyMeta). The container's resolution methods use
-    isinstance(hint, _injectpy) to dispatch injection handling.
+    isinstance(hint, _providify) to dispatch injection handling.
 
     No logic, state, or required methods — presence in the MRO is the
     entire contract.
@@ -38,7 +38,7 @@ class _injectpy:
 
     Example:
         @dataclass
-        class MyMeta(_injectpy):
+        class MyMeta(_providify):
             qualifier: str | None = None  # will be detected by the container
     """
 
@@ -46,7 +46,7 @@ class _injectpy:
 
 
 @dataclass
-class InjectMeta(_injectpy):
+class InjectMeta(_providify):
     """Marker placed inside Annotated[T, InjectMeta(...)] by the Inject alias.
 
     Detected by the container's _resolve_hint_sync/_async methods to control
@@ -184,7 +184,7 @@ InjectInstances = _InjectedInstancesAlias()
 
 
 @dataclass
-class LazyMeta(_injectpy):
+class LazyMeta(_providify):
     """Marker placed inside Annotated[T, LazyMeta(...)] by the Lazy alias.
 
     Detected by the container's _resolve_hint_sync/_async methods to
@@ -339,9 +339,9 @@ class _LazyAlias:
 Lazy = _LazyAlias()
 
 
-def _has_injectpy_metadata(hint: Any) -> bool:
+def _has_providify_metadata(hint: Any) -> bool:
     """
-    Return True if a type hint contains any _injectpy metadata in its Annotated args.
+    Return True if a type hint contains any _providify metadata in its Annotated args.
 
     Designed as a fast pre-flight check — call this before the more expensive
     _resolve_hint_sync/_async to avoid processing hints that carry no injection
@@ -352,30 +352,30 @@ def _has_injectpy_metadata(hint: Any) -> bool:
               or complex generics (list[T], Optional[T]) are all accepted.
 
     Returns:
-        True  — hint is Annotated[T, ..., <_injectpy>, ...] with at least
-                one _injectpy instance among the metadata args.
+        True  — hint is Annotated[T, ..., <_providify>, ...] with at least
+                one _providify instance among the metadata args.
         False — hint is a bare type, a non-Annotated generic, or an Annotated
-                type whose metadata contains no _injectpy instances.
+                type whose metadata contains no _providify instances.
 
     Edge cases:
         - Bare type (int, MyClass)         → False, no Annotated wrapper
-        - Annotated with no _injectpy    → False (e.g. Annotated[int, "doc"])
-        - Annotated with multiple metadata → True if ANY arg is _injectpy
+        - Annotated with no _providify    → False (e.g. Annotated[int, "doc"])
+        - Annotated with multiple metadata → True if ANY arg is _providify
         - Nested Annotated                 → False — outer origin must be
                                              Annotated; inner nesting is not walked
         - hint is None                     → False, get_origin(None) is not Annotated
 
     Example:
-        _has_injectpy_metadata(int)                          # False
-        _has_injectpy_metadata(Inject[MyService])            # True
-        _has_injectpy_metadata(Annotated[int, "just a doc"]) # False
-        _has_injectpy_metadata(Lazy[MyService])              # True
+        _has_providify_metadata(int)                          # False
+        _has_providify_metadata(Inject[MyService])            # True
+        _has_providify_metadata(Annotated[int, "just a doc"]) # False
+        _has_providify_metadata(Lazy[MyService])              # True
     """
-    return _get_injectpy_metadata(hint) is not None
+    return _get_providify_metadata(hint) is not None
 
 
-def _get_injectpy_metadata(hint: Any) -> _injectpy | None:
+def _get_providify_metadata(hint: Any) -> _providify | None:
     if get_origin(hint) is Annotated:
         args = get_args(hint)
-        return next((a for a in args[1:] if isinstance(a, _injectpy)), None)
+        return next((a for a in args[1:] if isinstance(a, _providify)), None)
     return None

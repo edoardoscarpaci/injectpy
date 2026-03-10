@@ -1,4 +1,4 @@
-# injectpy/__init__.py
+# providify/__init__.py
 
 __all__ = [
     # Container

@@ -34,7 +34,7 @@ from .type import (
     InjectMeta,
     LazyMeta,
     LazyProxy,
-    _has_injectpy_metadata,
+    _has_providify_metadata,
 )
 
 T = TypeVar("T")
@@ -96,7 +96,7 @@ class _ScopedContainer:
 class DIContainer:
     """Central dependency injection container — supports sync and async resolution.
 
-    Maintains a registry of :class:`~injectpy.binding.AnyBinding` objects and
+    Maintains a registry of :class:`~providify.binding.AnyBinding` objects and
     resolves them on demand, respecting scope caching (singleton, request, session).
     Operates in two phases:
 
@@ -754,8 +754,8 @@ class DIContainer:
     def _get_cache_key(self, binding: AnyBinding) -> Any:
         """Return a hashable cache key for *binding*.
 
-        Uses the implementation class for :class:`~injectpy.binding.ClassBinding`
-        and the provider callable for :class:`~injectpy.binding.ProviderBinding`,
+        Uses the implementation class for :class:`~providify.binding.ClassBinding`
+        and the provider callable for :class:`~providify.binding.ProviderBinding`,
         so the key is stable and unique regardless of binding type.
 
         Args:
@@ -877,7 +877,7 @@ class DIContainer:
         fn: Callable[..., Any],
         owner_name: str,
     ) -> dict[str, Any]:
-        """Build a ``kwargs`` dict by resolving every injectpy parameter of *fn*.
+        """Build a ``kwargs`` dict by resolving every providify parameter of *fn*.
 
         Iterates over the type hints of *fn*, skips ``return``, and tries to
         resolve each annotated parameter from the container. Parameters with
@@ -928,7 +928,7 @@ class DIContainer:
         fn: Callable[..., Any],
         owner_name: str,
     ) -> dict[str, Any]:
-        """Build a ``kwargs`` dict by resolving every injectpy parameter, asynchronously.
+        """Build a ``kwargs`` dict by resolving every providify parameter, asynchronously.
 
         Async mirror of :meth:`_collect_kwargs_sync`.
         Shared by :meth:`_resolve_constructor_async` and :meth:`_call_provider_async`.
@@ -979,7 +979,7 @@ class DIContainer:
     ) -> list[AnyBinding]:
         """Introspect a callable's type hints and resolve each to a registered binding.
 
-        Only hints that carry injectpy metadata produce a binding — plain
+        Only hints that carry providify metadata produce a binding — plain
         ``int``, ``str``, unannotated args, and the ``return`` hint are skipped.
 
         Args:
@@ -989,14 +989,14 @@ class DIContainer:
             priority:  Forwarded to ``_resolve_dependency``.
 
         Returns:
-            Ordered list of ``AnyBinding`` objects, one per resolvable injectpy
-            parameter. Parameters that are unresolvable or lack injectpy metadata
+            Ordered list of ``AnyBinding`` objects, one per resolvable providify
+            parameter. Parameters that are unresolvable or lack providify metadata
             are silently omitted.
 
         Edge cases:
             - ``get_type_hints`` raises → swallowed; returns ``[]``.
             - ``return`` hint present  → stripped before iteration.
-            - No injectpy parameters → returns ``[]``.
+            - No providify parameters → returns ``[]``.
         """
         try:
             hints = get_type_hints(
@@ -1031,14 +1031,14 @@ class DIContainer:
 
         Returns:
             The best ``AnyBinding`` for the hint's base type, or ``None`` if:
-            - the hint has no injectpy metadata, **or**
+            - the hint has no providify metadata, **or**
             - ``_get_best_candidate`` raises ``LookupError``.
 
         Edge cases:
             - Bare type with no ``Annotated`` wrapper → ``None`` returned.
             - ``LookupError`` from ``_get_best_candidate`` → swallowed, returns ``None``.
         """
-        if not _has_injectpy_metadata(hint):
+        if not _has_providify_metadata(hint):
             return None
         args = get_args(hint)
         base_type = args[0]
@@ -1483,7 +1483,7 @@ class DIContainer:
                        priority are considered during the check.
 
         Returns:
-            A list of :class:`~injectpy.metadata.ScopeLeak` instances, one
+            A list of :class:`~providify.metadata.ScopeLeak` instances, one
             per violating dependency. An empty list means no leaks were found.
         """
         leaks: list[ScopeLeak] = []
@@ -1514,8 +1514,8 @@ class DIContainer:
         """Validate all registered bindings against the full registry.
 
         Iterates over every binding and calls
-        :meth:`~injectpy.binding.Binding.validate`, which for
-        :class:`~injectpy.binding.ClassBinding` instances performs
+        :meth:`~providify.binding.Binding.validate`, which for
+        :class:`~providify.binding.ClassBinding` instances performs
         scope-leak detection. This is the *phase transition* from registration
         to resolution: it runs once after all bindings have been registered,
         ensuring the complete dependency graph is visible during validation.
@@ -1595,8 +1595,8 @@ class DIContainer:
     def scan(self, module: str | ModuleType, *, recursive: bool = False) -> None:
         """Scan a module for DI-decorated classes and functions.
 
-        Delegates to the configured :class:`~injectpy.scanner.ContainerScanner`
-        (defaults to :class:`~injectpy.scanner.DefaultContainerScanner`).
+        Delegates to the configured :class:`~providify.scanner.ContainerScanner`
+        (defaults to :class:`~providify.scanner.DefaultContainerScanner`).
 
         Args:
             module:    A fully-qualified module name or an already-imported module.
@@ -1696,10 +1696,10 @@ class DIContainer:
 
         Recursively describes every registered binding and its dependency tree.
         The result is a plain, serialisable object — safe to render, log, or
-        convert to JSON via :meth:`~injectpy.descriptor.DIContainerDescriptor.to_dict`.
+        convert to JSON via :meth:`~providify.descriptor.DIContainerDescriptor.to_dict`.
 
         Returns:
-            A :class:`~injectpy.descriptor.DIContainerDescriptor` containing
+            A :class:`~providify.descriptor.DIContainerDescriptor` containing
             all binding descriptors grouped by scope.
 
         Example:

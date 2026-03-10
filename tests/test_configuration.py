@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Provider, Singleton
-from injectpy.decorator.module import Configuration
-from injectpy.metadata import _has_configuration_module
+from providify.container import DIContainer
+from providify.decorator.scope import Provider, Singleton
+from providify.decorator.module import Configuration
+from providify.metadata import _has_configuration_module
 
 
 # ─────────────────────────────────────────────────────────────────

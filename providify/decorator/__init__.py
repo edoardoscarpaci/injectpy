@@ -1,8 +1,8 @@
-"""Public re-exports for the injectpy.decorator sub-package.
+"""Public re-exports for the providify.decorator sub-package.
 
 Centralises all decorator imports so callers can write:
 
-    from injectpy.decorator import Component, Singleton, Named, Priority
+    from providify.decorator import Component, Singleton, Named, Priority
 
 instead of knowing which internal sub-module each decorator lives in.
 

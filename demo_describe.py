@@ -25,7 +25,7 @@ annotations from the module namespace, not local function scope.
 
 from __future__ import annotations
 
-from injectpy import (
+from providify import (
     Component,
     DIContainer,
     Inject,
@@ -142,7 +142,7 @@ def main() -> None:
     separator = "─" * 60
 
     # ── Tree 1: three-tier chain ─────────────────────────────────
-    from injectpy.binding import ClassBinding
+    from providify.binding import ClassBinding
 
     app_binding = ClassBinding(AppService, AppService)
 

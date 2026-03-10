@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, Provider, Singleton
+from providify.container import DIContainer
+from providify.decorator.scope import Component, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────

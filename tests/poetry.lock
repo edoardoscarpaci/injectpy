@@ -26,20 +26,6 @@ files = [
 ]
 
 [[package]]
-name = "injectpy"
-version = "0.1.0"
-description = ""
-optional = false
-python-versions = ">=3.12"
-groups = ["main"]
-files = []
-develop = true
-
-[package.source]
-type = "directory"
-url = ".."
-
-[[package]]
 name = "packaging"
 version = "26.0"
 description = "Core utilities for Python packages"
@@ -66,6 +52,20 @@ files = [
 [package.extras]
 dev = ["pre-commit", "tox"]
 testing = ["coverage", "pytest", "pytest-benchmark"]
+
+[[package]]
+name = "providify"
+version = "0.1.0"
+description = "A Python dependency injection container inspired by Jakarta CDI and Spring. Supports sync and async resolution, multiple scopes, lifecycle hooks, and configuration modules."
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = ".."
 
 [[package]]
 name = "pygments"
@@ -140,4 +140,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "e2e84561dd4eafa87d41e6d05643f7ffbb8df7cbd42193c3da806654eac6023a"
+content-hash = "1a6e8d36fb972b0f09feb196c089fd0bb6f1ae20aad4f9758ddeb260e6028575"

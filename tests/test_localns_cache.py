@@ -23,8 +23,8 @@ the lookup with every registered class, making locally-defined deps resolvable.
 from __future__ import annotations
 
 
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, Provider, Singleton
+from providify.container import DIContainer
+from providify.decorator.scope import Component, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ class TestLocallyDefinedClassInjection:
     def test_locally_defined_dep_injected_into_constructor(
         self, container: DIContainer
     ) -> None:
-        """A class defined inside this method must be injectpy via its type hint."""
+        """A class defined inside this method must be providify via its type hint."""
 
         @Component
         class LocalConfig:

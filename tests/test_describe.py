@@ -2,7 +2,7 @@
 and the BindingDescriptor data-class.
 
 WHY MODULE-LEVEL FIXTURES:
-  All injectpy classes are defined at module level (not inside test functions)
+  All providify classes are defined at module level (not inside test functions)
   because ``from __future__ import annotations`` turns every annotation into a
   lazy string.  ``get_type_hints()`` resolves those strings from the function's
   ``__globals__``, which is the *module* namespace — not the local scope of the
@@ -34,11 +34,11 @@ Covered:
 from __future__ import annotations
 
 
-from injectpy.binding import BindingDescriptor, ClassBinding, ProviderBinding
-from injectpy.container import DIContainer
-from injectpy.decorator.scope import Component, Provider, Singleton
-from injectpy.metadata import Scope
-from injectpy.type import Inject
+from providify.binding import BindingDescriptor, ClassBinding, ProviderBinding
+from providify.container import DIContainer
+from providify.decorator.scope import Component, Provider, Singleton
+from providify.metadata import Scope
+from providify.type import Inject
 
 
 # ─────────────────────────────────────────────────────────────────

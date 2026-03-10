@@ -15,7 +15,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: poetry run pytest tests/
+        entry: sh -c 'cd tests && poetry lock && poetry install && cd .. && poetry run pytest tests/'
         args: [--tb=short, -q]
         language: system
         pass_filenames: false  # Don't pass staged filenames to pytest
