@@ -91,13 +91,285 @@ def _make_decorator(scope: Scope) -> Any:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  Public scope decorators — each is just _make_decorator(Scope.X)
+#  Public scope decorators — explicit @overload wrappers around
+#  _make_decorator so that linters (pyright / mypy) can see the
+#  kwargs (qualifier, priority, inherited) instead of just `Any`.
+#
+#  DESIGN: We intentionally keep _make_decorator as the single
+#  source of truth for the runtime logic, but expose public names
+#  as thin wrapper functions that carry the typed @overload stubs.
+#
+#  Without this, `Singleton = _make_decorator(Scope.SINGLETON)`
+#  produces a name of type `Any` — overloads defined inside the
+#  closure are invisible to the type checker.
+#
+#  Tradeoffs:
+#    ✅ Linters see qualifier / priority / inherited kwargs
+#    ✅ Type narrowing works: @Singleton(cls) → type[T]
+#    ✅ Runtime behaviour is identical — delegates to _make_decorator
+#    ❌ Four thin wrappers to maintain if the signature ever changes
+#    ❌ Slightly more boilerplate — acceptable given the clear upside
+#
+#  Alternative considered: Protocol with overloaded __call__.
+#  Rejected because pyright's support for @overload inside Protocol
+#  bodies is inconsistent across versions, making it unreliable.
 # ─────────────────────────────────────────────────────────────────
 
-Component = _make_decorator(Scope.DEPENDENT)
-Singleton = _make_decorator(Scope.SINGLETON)
-RequestScoped = _make_decorator(Scope.REQUEST)
-SessionScoped = _make_decorator(Scope.SESSION)
+# Private implementations — carry the actual runtime logic.
+_component_impl = _make_decorator(Scope.DEPENDENT)
+_singleton_impl = _make_decorator(Scope.SINGLETON)
+_request_impl = _make_decorator(Scope.REQUEST)
+_session_impl = _make_decorator(Scope.SESSION)
+
+
+# ── Component ──────────────────────────────────────────────────────
+
+
+@overload
+def Component(__cls: type[T]) -> type[T]: ...
+
+
+@overload
+def Component(
+    __cls: None = ...,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Callable[[type[T]], type[T]]: ...
+
+
+def Component(
+    __cls: Any = None,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Any:
+    """
+    Marks a class as a DI component with DEPENDENT (prototype) scope.
+
+    Each injection creates a fresh instance — no shared state.
+    Equivalent to Jakarta CDI's default (dependent) scope.
+
+    Args:
+        __cls:      The class to decorate (positional-only, implicit when
+                    used as a bare @Component decorator).
+        qualifier:  Named qualifier to distinguish multiple bindings of
+                    the same type — equivalent to Jakarta's @Named.
+        priority:   Binding priority; higher wins when multiple bindings
+                    match the same type.
+        inherited:  If True, subclasses inherit this binding automatically.
+
+    Returns:
+        The decorated class unchanged (type preserved for the type checker),
+        or a decorator when called with keyword arguments.
+
+    Raises:
+        TypeError: If __cls is not a class.
+
+    Example:
+        @Component
+        class EmailService(NotificationService): ...
+
+        @Component(qualifier="sms", priority=2)
+        class SmsService(NotificationService): ...
+
+    Thread safety:  ✅ Safe — metadata stamped at decoration time, before
+                    any concurrent access.
+    Async safety:   ✅ Safe — pure metadata write, no async state involved.
+    """
+    return _component_impl(
+        __cls, qualifier=qualifier, priority=priority, inherited=inherited
+    )
+
+
+# ── Singleton ──────────────────────────────────────────────────────
+
+
+@overload
+def Singleton(__cls: type[T]) -> type[T]: ...
+
+
+@overload
+def Singleton(
+    __cls: None = ...,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Callable[[type[T]], type[T]]: ...
+
+
+def Singleton(
+    __cls: Any = None,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Any:
+    """
+    Marks a class as a DI component with SINGLETON scope.
+
+    One shared instance is created per container and reused for every
+    injection — equivalent to Jakarta CDI's @ApplicationScoped.
+
+    Args:
+        __cls:      The class to decorate (positional-only, implicit when
+                    used as a bare @Singleton decorator).
+        qualifier:  Named qualifier to distinguish multiple bindings of
+                    the same type — equivalent to Jakarta's @Named.
+        priority:   Binding priority; higher wins when multiple bindings
+                    match the same type.
+        inherited:  If True, subclasses inherit this binding automatically.
+
+    Returns:
+        The decorated class unchanged (type preserved for the type checker),
+        or a decorator when called with keyword arguments.
+
+    Raises:
+        TypeError: If __cls is not a class.
+
+    Example:
+        @Singleton
+        class DatabasePool: ...
+
+        @Singleton(qualifier="primary", priority=10)
+        class PrimaryDatabase(Database): ...
+
+    Thread safety:  ✅ Safe — metadata stamped at decoration time, before
+                    any concurrent access.
+    Async safety:   ✅ Safe — pure metadata write, no async state involved.
+    """
+    return _singleton_impl(
+        __cls, qualifier=qualifier, priority=priority, inherited=inherited
+    )
+
+
+# ── RequestScoped ──────────────────────────────────────────────────
+
+
+@overload
+def RequestScoped(__cls: type[T]) -> type[T]: ...
+
+
+@overload
+def RequestScoped(
+    __cls: None = ...,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Callable[[type[T]], type[T]]: ...
+
+
+def RequestScoped(
+    __cls: Any = None,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Any:
+    """
+    Marks a class as a DI component with REQUEST scope.
+
+    One instance is created per active request context and shared across
+    all injections within that request — equivalent to Jakarta's @RequestScoped.
+
+    Args:
+        __cls:      The class to decorate (positional-only, implicit when
+                    used as a bare @RequestScoped decorator).
+        qualifier:  Named qualifier to distinguish multiple bindings of
+                    the same type — equivalent to Jakarta's @Named.
+        priority:   Binding priority; higher wins when multiple bindings
+                    match the same type.
+        inherited:  If True, subclasses inherit this binding automatically.
+
+    Returns:
+        The decorated class unchanged (type preserved for the type checker),
+        or a decorator when called with keyword arguments.
+
+    Raises:
+        TypeError: If __cls is not a class.
+
+    Example:
+        @RequestScoped
+        class RequestContext: ...
+
+        @RequestScoped(qualifier="audit")
+        class AuditRequestContext(RequestContext): ...
+
+    Thread safety:  ✅ Safe — metadata stamped at decoration time, before
+                    any concurrent access.
+    Async safety:   ✅ Safe — pure metadata write, no async state involved.
+    """
+    return _request_impl(
+        __cls, qualifier=qualifier, priority=priority, inherited=inherited
+    )
+
+
+# ── SessionScoped ──────────────────────────────────────────────────
+
+
+@overload
+def SessionScoped(__cls: type[T]) -> type[T]: ...
+
+
+@overload
+def SessionScoped(
+    __cls: None = ...,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Callable[[type[T]], type[T]]: ...
+
+
+def SessionScoped(
+    __cls: Any = None,
+    *,
+    qualifier: str | None = None,
+    priority: int = 0,
+    inherited: bool = False,
+) -> Any:
+    """
+    Marks a class as a DI component with SESSION scope.
+
+    One instance is created per active session context and shared across
+    all injections within that session — equivalent to Jakarta's @SessionScoped.
+
+    Args:
+        __cls:      The class to decorate (positional-only, implicit when
+                    used as a bare @SessionScoped decorator).
+        qualifier:  Named qualifier to distinguish multiple bindings of
+                    the same type — equivalent to Jakarta's @Named.
+        priority:   Binding priority; higher wins when multiple bindings
+                    match the same type.
+        inherited:  If True, subclasses inherit this binding automatically.
+
+    Returns:
+        The decorated class unchanged (type preserved for the type checker),
+        or a decorator when called with keyword arguments.
+
+    Raises:
+        TypeError: If __cls is not a class.
+
+    Example:
+        @SessionScoped
+        class UserSession: ...
+
+        @SessionScoped(qualifier="admin")
+        class AdminSession(UserSession): ...
+
+    Thread safety:  ✅ Safe — metadata stamped at decoration time, before
+                    any concurrent access.
+    Async safety:   ✅ Safe — pure metadata write, no async state involved.
+    """
+    return _session_impl(
+        __cls, qualifier=qualifier, priority=priority, inherited=inherited
+    )
+
+
 # ─────────────────────────────────────────────────────────────────
 #  _make_updater — factory for single/multi field update decorators
 #  Named / Priority / and any future field-update decorators
